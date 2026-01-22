@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Stando
+Comment=A next-gen selection based search system for Linux
+Exec=stando
+Icon=stando
+Terminal=false
+Categories=Utility;System;
+StartupNotify=true
+Keywords=search;launcher;finder;

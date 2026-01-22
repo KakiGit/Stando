@@ -1,0 +1,281 @@
+use anyhow::Result;
+use gtk4::prelude::*;
+use gtk4::{ApplicationWindow, Box, Entry, ListBox, ScrolledWindow, Button};
+use glib;
+use adw::Application;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use crate::search::SearchResult;
+
+const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
+const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
+
+pub struct SearchWindow {
+    window: ApplicationWindow,
+    entry: Entry,
+    ai_button: Button,
+    list_box: ListBox,
+    results: Arc<RwLock<Vec<SearchResult>>>,
+    selected_index: Arc<RwLock<usize>>,
+}
+
+impl SearchWindow {
+    pub fn new(app: &Application) -> Result<Self> {
+        let window = ApplicationWindow::builder()
+            .application(app)
+            .title("Stando")
+            .default_width(800)
+            .default_height(600)
+            .resizable(true)
+            .decorated(false)
+            .build();
+
+        // Main container
+        let main_box = Box::new(gtk4::Orientation::Vertical, 0);
+        window.set_child(Some(&main_box));
+
+        // Search bar container (horizontal box for entry + button)
+        let search_box = Box::new(gtk4::Orientation::Horizontal, 8);
+        search_box.set_margin_start(16);
+        search_box.set_margin_end(16);
+        search_box.set_margin_top(16);
+        search_box.set_margin_bottom(8);
+        main_box.append(&search_box);
+
+        // Search entry
+        let entry = Entry::new();
+        entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
+        entry.set_hexpand(true);
+        entry.set_margin_start(0);
+        entry.set_margin_end(0);
+        search_box.append(&entry);
+
+        // AI mode toggle button
+        let ai_button = Button::new();
+        ai_button.set_css_classes(&["ai-mode-button"]);
+        ai_button.set_tooltip_text(Some("Toggle AI Mode (Ctrl+I)"));
+        ai_button.set_label("AI");
+        ai_button.set_valign(gtk4::Align::Center);
+        search_box.append(&ai_button);
+
+        // Results list
+        let scrolled = ScrolledWindow::new();
+        scrolled.set_hexpand(true);
+        scrolled.set_vexpand(true);
+        
+        let list_box = ListBox::new();
+        list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        scrolled.set_child(Some(&list_box));
+        main_box.append(&scrolled);
+
+        // Load CSS
+        let provider = gtk4::CssProvider::new();
+        let css_data = include_str!("../assets/style.css");
+        provider.load_from_data(css_data);
+        if let Some(display) = gdk4::Display::default() {
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+
+        // Initially hidden
+        window.set_visible(false);
+
+        let results = Arc::new(RwLock::new(Vec::new()));
+        let selected_index = Arc::new(RwLock::new(0));
+
+        Ok(Self {
+            window,
+            entry,
+            ai_button,
+            list_box,
+            results,
+            selected_index,
+        })
+    }
+
+    pub fn window(&self) -> &ApplicationWindow {
+        &self.window
+    }
+
+    pub fn entry(&self) -> &Entry {
+        &self.entry
+    }
+
+    pub fn ai_button(&self) -> &Button {
+        &self.ai_button
+    }
+
+    pub fn set_ai_mode(&self, enabled: bool) {
+        if enabled {
+            self.ai_button.add_css_class("ai-mode-active");
+            self.ai_button.set_tooltip_text(Some("AI Mode: ON (Click to disable)"));
+            self.entry.set_placeholder_text(Some(AI_PLACEHOLDER));
+        } else {
+            self.ai_button.remove_css_class("ai-mode-active");
+            self.ai_button.set_tooltip_text(Some("AI Mode: OFF (Click to enable)"));
+            self.entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
+        }
+    }
+
+    pub fn connect_ai_button_clicked<F: Fn() + 'static>(&self, callback: F) {
+        self.ai_button.connect_clicked(move |_| {
+            callback();
+        });
+    }
+
+    pub fn show(&self) {
+        self.window.set_visible(true);
+        self.window.present();
+        self.entry.grab_focus();
+    }
+
+    pub fn hide(&self) {
+        self.window.set_visible(false);
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.window.is_visible()
+    }
+
+    pub async fn update_results(&self, new_results: Vec<SearchResult>) {
+        *self.results.write().await = new_results.clone();
+        
+        // Clear existing rows
+        while let Some(row) = self.list_box.row_at_index(0) {
+            self.list_box.remove(&row);
+        }
+
+        // Add new results
+        for (_index, result) in new_results.iter().enumerate() {
+            let row = gtk4::ListBoxRow::new();
+            let display_text = match result {
+                crate::search::SearchResult::Text { content, name } => {
+                    // For text results, show full content and let the label wrap.
+                    format!("{}\n{}", name, content)
+                }
+                _ => result.display_name().to_string(),
+            };
+            let label = gtk4::Label::new(Some(&display_text));
+            label.set_halign(gtk4::Align::Start);
+            label.set_xalign(0.0);
+            label.set_hexpand(true);
+            label.set_margin_start(10);
+            label.set_margin_end(10);
+            label.set_margin_top(5);
+            label.set_margin_bottom(5);
+            label.set_wrap(true);
+            label.set_wrap_mode(gtk4::pango::WrapMode::Word);
+            label.set_ellipsize(gtk4::pango::EllipsizeMode::None);
+            row.set_child(Some(&label));
+            row.set_selectable(true);
+            self.list_box.append(&row);
+        }
+
+        // Select first item
+        if let Some(first_row) = self.list_box.row_at_index(0) {
+            self.list_box.select_row(Some(&first_row));
+            *self.selected_index.write().await = 0;
+        }
+    }
+
+    pub async fn clear_results(&self) {
+        self.update_results(Vec::new()).await;
+    }
+
+    pub async fn get_selected_result(&self) -> Option<SearchResult> {
+        let results = self.results.read().await;
+        let index = self.selected_index.read().await;
+        results.get(*index).cloned()
+    }
+
+    pub fn connect_activate<F: Fn() + 'static>(&self, callback: F) {
+        self.list_box.connect_row_activated(move |_, _| {
+            callback();
+        });
+    }
+
+    pub fn connect_entry_activate<F: Fn() + 'static>(&self, callback: F) {
+        self.entry.connect_activate(move |_| {
+            callback();
+        });
+    }
+
+    pub fn connect_key_press<F: Fn(gdk4::Key) -> bool + 'static>(&self, callback: F) {
+        let controller = gtk4::EventControllerKey::new();
+        controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
+            let handled = match keyval {
+                gdk4::Key::Escape
+                | gdk4::Key::Up
+                | gdk4::Key::Down
+                | gdk4::Key::KP_Up
+                | gdk4::Key::KP_Down
+                | gdk4::Key::Tab
+                | gdk4::Key::ISO_Left_Tab => callback(keyval),
+                _ => false,
+            };
+
+            if handled {
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        self.window.add_controller(controller);
+    }
+
+    pub fn get_query(&self) -> String {
+        self.entry.text().to_string()
+    }
+
+    pub fn set_query(&self, query: &str) {
+        self.entry.set_text(query);
+    }
+
+    pub fn clear_query(&self) {
+        self.entry.set_text("");
+    }
+
+    pub fn move_selection_down(&self) {
+        // Move selection down in list
+        let current = *self.selected_index.blocking_read();
+        let results_len = self.results.blocking_read().len();
+        if current < results_len.saturating_sub(1) {
+            *self.selected_index.blocking_write() = current + 1;
+            if let Some(row) = self.list_box.row_at_index((current + 1) as i32) {
+                self.list_box.select_row(Some(&row));
+            }
+        }
+    }
+
+    pub fn move_selection_up(&self) {
+        // Move selection up in list
+        let current = *self.selected_index.blocking_read();
+        if current > 0 {
+            *self.selected_index.blocking_write() = current - 1;
+            if let Some(row) = self.list_box.row_at_index((current - 1) as i32) {
+                self.list_box.select_row(Some(&row));
+            }
+        }
+    }
+
+    pub fn autocomplete_selected(&self) -> bool {
+        let results = self.results.blocking_read();
+        let index = *self.selected_index.blocking_read();
+        if let Some(result) = results.get(index) {
+            let current_text = self.entry.text().to_string();
+            let completion = result.display_name();
+
+            if completion.starts_with(&current_text) {
+                self.entry.set_text(completion);
+                self.entry.set_position(-1);
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+}
