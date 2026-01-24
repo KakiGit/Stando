@@ -1,48 +1,48 @@
-# Implementation Plan: Add Debug Logging
+# Implementation Plan: [FEATURE]
 
-**Branch**: `001-add-debug-logging` | **Date**: 2026-01-24 | **Spec**: /home/kaki/Github/Stando/specs/001-add-debug-logging/spec.md  
-**Input**: Feature specification from `/specs/001-add-debug-logging/spec.md`
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-Add function-level debug logging across the Stando codebase using the existing logging stack, gated behind runtime configuration so logs are emitted only when debug is enabled and avoid sensitive data.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: Rust 2021 (Cargo package `stando` 0.1.0)  
-**Primary Dependencies**: gtk4/libadwaita (UI), tracing + tracing-subscriber (logging), tokio (async), global-hotkey (hotkeys), reqwest (AI HTTP)  
-**Storage**: Config file at `~/.config/stando/config.toml`; logs to standard output/error  
-**Testing**: `cargo test` (no dedicated test harness yet)  
-**Target Platform**: Linux desktop (GTK4)  
-**Project Type**: Single binary application  
-**Performance Goals**: Maintain responsive UI; negligible overhead when debug logging is disabled  
-**Constraints**: Logs must not include secrets, prompts, file contents, or full paths unless debug logging is explicitly enabled; no added network calls  
-**Scale/Scope**: Function-level logging across `src/*.rs` in the Stando repo
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
 
-**Logging Conventions**:
-- Log a debug entry on function entry and exit with function name and outcome.
-- Mark outcome as error for fallible functions when returning an error.
-- Never log prompts, file contents, full paths, API keys, or other secrets.
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [single/web/mobile - determines source structure]  
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- Keyboard-first UX: Logging adds no UI changes and remains non-blocking.
-- Local-first/privacy: Debug logs are gated behind explicit enablement and must avoid sensitive data.
-- Daemon reliability: Logging changes are additive and must not affect single-instance/hotkey behavior.
-- Resource efficiency: Logging overhead is minimized; debug logging can be disabled.
-- Linux integration: No change to GTK4/libadwaita or desktop artifacts.
-
-**Post-Design Re-check**:
-- No violations introduced; logging scope and privacy constraints remain aligned with constitution.
+- Keyboard-first UX: core flows are keyboard-accessible; async work keeps UI responsive.
+- Local-first/privacy: no network calls outside explicit AI mode; key handling defined.
+- Daemon reliability: single-instance, hotkey behavior, clean start/stop addressed.
+- Resource efficiency: idle behavior, indexing bounds, and perf budget described.
+- Linux integration: GTK4/libadwaita usage and desktop artifacts covered.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/001-add-debug-logging/
+specs/[###-feature]/
 ├── plan.md              # This file (/speckit.plan command output)
 ├── research.md          # Phase 0 output (/speckit.plan command)
 ├── data-model.md        # Phase 1 output (/speckit.plan command)
@@ -52,40 +52,57 @@ specs/001-add-debug-logging/
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
 src/
-├── ai.rs
-├── app.rs
-├── config.rs
-├── daemon.rs
-├── hotkeys.rs
-├── main.rs
-├── search.rs
-├── tray.rs
-└── ui.rs
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: Single Rust binary with modules in `src/`.
-
-## Phase 0: Research
-
-- Decide on logging instrumentation strategy using the existing `tracing` stack.
-- Confirm debug logging toggles and environment configuration paths.
-- Define privacy-safe logging rules for function-level instrumentation.
-
-## Phase 1: Design & Contracts
-
-- Model the debug log entry data shape and context identifiers.
-- Document any API contracts (none expected; internal-only logging).
-- Provide a quickstart for enabling debug logging during development.
-- Update agent context with any new tech references (none expected).
-
-## Phase 2: Planning
-
-- Break down instrumentation by module and ensure coverage of entry/exit/error paths.
-- Define verification steps for debug on/off behavior and privacy constraints.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
-No constitution violations requiring justification.
+> **Fill ONLY if Constitution Check has violations that must be justified**
+
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

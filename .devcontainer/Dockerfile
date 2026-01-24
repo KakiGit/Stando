@@ -13,7 +13,17 @@ RUN apt-get update && apt-get install -y \
     xauth \
     x11-apps \
     build-essential \
+    npm \
+    cmake \
+    zsh \
+    locales \
     && rm -rf /var/lib/apt/lists/*
+
+#uncomment en_US.UTF-8 UTF-8 in /etc/locale.gen
+RUN sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
+ENV LANG en_US.UTF-8
+
+RUN npm i -g @openai/codex
 
 RUN chmod 0777 /tmp
 

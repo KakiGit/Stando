@@ -46,7 +46,7 @@ impl App {
 
             // Create search window
             let search_window = Arc::new(
-                SearchWindow::new(&application)
+                SearchWindow::new(&application, &config.hotkey_ai_toggle)
                     .context("Failed to create search window")?
             );
 
@@ -91,7 +91,7 @@ impl App {
                 .index_files(&self.config.search_paths)
                 .await
                 .context("Failed to index files")?;
-            
+
             self.search_engine
                 .index_applications()
                 .await
@@ -99,6 +99,9 @@ impl App {
 
             // Set up UI callbacks
             self.setup_ui_callbacks()?;
+
+            // Set up window-local shortcuts
+            self.setup_window_shortcuts()?;
 
             // Set up hotkey polling
             self.setup_hotkey_polling();
@@ -175,14 +178,14 @@ impl App {
             glib::MainContext::default().spawn_local(async move {
                 // Check if AI mode is enabled
                 let is_ai_mode = *ai_mode.read().await;
-                
+
                 if is_ai_mode {
                     // In AI mode: send query to AI
                     let query = search_window_clone.get_query();
                     if query.is_empty() {
                         return;
                     }
-                    
+
                     if let Some(ai_service) = ai_service {
                         // Show a lightweight loading row while waiting for AI
                         let loading_result = crate::search::SearchResult::Text {
@@ -281,19 +284,7 @@ impl App {
         let ai_mode_clone = ai_mode.clone();
         let search_window_ai = self.search_window.clone();
         self.search_window.connect_ai_button_clicked(move || {
-            let ai_mode = ai_mode_clone.clone();
-            let search_window = search_window_ai.clone();
-            glib::MainContext::default().spawn_local(async move {
-                let mut mode = ai_mode.write().await;
-                *mode = !*mode;
-                let enabled = *mode;
-                drop(mode);
-                // Update button state
-                search_window.set_ai_mode(enabled);
-                if enabled {
-                    search_window.clear_results().await;
-                }
-            });
+            Self::spawn_toggle_ai(ai_mode_clone.clone(), search_window_ai.clone());
         });
 
             Ok(())
@@ -323,25 +314,58 @@ impl App {
                                 search_window.show();
                             }
                         }
-                        HotKeyEvent::ToggleAI => {
-                            let ai_mode_clone = ai_mode.clone();
-                            let search_window_clone = search_window.clone();
-                            glib::MainContext::default().spawn_local(async move {
-                                let mut mode = ai_mode_clone.write().await;
-                                *mode = !*mode;
-                                let enabled = *mode;
-                                drop(mode);
-                                // Update UI to show AI mode status
-                                search_window_clone.set_ai_mode(enabled);
-                                if enabled {
-                                    search_window_clone.clear_results().await;
-                                }
-                            });
-                        }
                     }
                 }
                 glib::ControlFlow::Continue
             });
+        }
+    }
+
+    fn setup_window_shortcuts(&self) -> Result<()> {
+        let log_guard = logging::function_guard("App::setup_window_shortcuts");
+        let result = (|| {
+            let window = self.search_window.window();
+            let action = gio::SimpleAction::new("toggle-ai-mode", None);
+            let ai_mode = self.ai_mode.clone();
+            let search_window = self.search_window.clone();
+            action.connect_activate(move |_, _| {
+                Self::spawn_toggle_ai(ai_mode.clone(), search_window.clone());
+            });
+            window.add_action(&action);
+
+            let controller = gtk4::ShortcutController::new();
+            controller.set_scope(gtk4::ShortcutScope::Local);
+            if let Some(trigger) = gtk4::ShortcutTrigger::parse_string(&self.config.hotkey_ai_toggle) {
+                let action = gtk4::NamedAction::new("win.toggle-ai-mode");
+                let shortcut = gtk4::Shortcut::new(Some(trigger), Some(action));
+                controller.add_shortcut(shortcut);
+            } else {
+                log_guard.mark_error();
+            }
+            window.add_controller(controller);
+            Ok(())
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
+    fn spawn_toggle_ai(ai_mode: Arc<RwLock<bool>>, search_window: Arc<SearchWindow>) {
+        glib::MainContext::default().spawn_local(async move {
+            Self::toggle_ai_mode(ai_mode, search_window).await;
+        });
+    }
+
+    async fn toggle_ai_mode(ai_mode: Arc<RwLock<bool>>, search_window: Arc<SearchWindow>) {
+        let mut mode = ai_mode.write().await;
+        *mode = !*mode;
+        let enabled = *mode;
+        drop(mode);
+        // Update UI to show AI mode status
+        search_window.set_ai_mode(enabled);
+        if enabled {
+            search_window.clear_results().await;
         }
     }
 
@@ -403,7 +427,7 @@ impl App {
                     .replace("%F", "")
                     .trim()
                     .to_string();
-                
+
                 let parts: Vec<&str> = exec_clean.split_whitespace().collect();
                 if let Some(command) = parts.first() {
                     let mut cmd = std::process::Command::new(command);

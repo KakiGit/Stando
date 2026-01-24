@@ -15,13 +15,14 @@ pub struct SearchWindow {
     window: ApplicationWindow,
     entry: Entry,
     ai_button: Button,
+    ai_shortcut: String,
     list_box: ListBox,
     results: Arc<RwLock<Vec<SearchResult>>>,
     selected_index: Arc<RwLock<usize>>,
 }
 
 impl SearchWindow {
-    pub fn new(app: &Application) -> Result<Self> {
+    pub fn new(app: &Application, ai_shortcut: &str) -> Result<Self> {
         let log_guard = logging::function_guard("SearchWindow::new");
         let window = ApplicationWindow::builder()
             .application(app)
@@ -55,7 +56,10 @@ impl SearchWindow {
         // AI mode toggle button
         let ai_button = Button::new();
         ai_button.set_css_classes(&["ai-mode-button"]);
-        ai_button.set_tooltip_text(Some("Toggle AI Mode (Ctrl+I)"));
+        ai_button.set_tooltip_text(Some(&format!(
+            "Toggle AI Mode ({})",
+            ai_shortcut
+        )));
         ai_button.set_label("AI");
         ai_button.set_valign(gtk4::Align::Center);
         search_box.append(&ai_button);
@@ -92,6 +96,7 @@ impl SearchWindow {
             window,
             entry,
             ai_button,
+            ai_shortcut: ai_shortcut.to_string(),
             list_box,
             results,
             selected_index,
@@ -121,11 +126,17 @@ impl SearchWindow {
         let _log_guard = logging::function_guard("SearchWindow::set_ai_mode");
         if enabled {
             self.ai_button.add_css_class("ai-mode-active");
-            self.ai_button.set_tooltip_text(Some("AI Mode: ON (Click to disable)"));
+            self.ai_button.set_tooltip_text(Some(&format!(
+                "AI Mode: ON (Click to disable, Shortcut: {})",
+                self.ai_shortcut
+            )));
             self.entry.set_placeholder_text(Some(AI_PLACEHOLDER));
         } else {
             self.ai_button.remove_css_class("ai-mode-active");
-            self.ai_button.set_tooltip_text(Some("AI Mode: OFF (Click to enable)"));
+            self.ai_button.set_tooltip_text(Some(&format!(
+                "AI Mode: OFF (Click to enable, Shortcut: {})",
+                self.ai_shortcut
+            )));
             self.entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
         }
     }
