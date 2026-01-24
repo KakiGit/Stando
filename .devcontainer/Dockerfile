@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+RUN chmod 0777 /tmp
+
 # Create a non-root user
 ARG USERNAME=vscode
 ARG USER_UID=1000
