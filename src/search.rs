@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use walkdir::WalkDir;
+use crate::logging;
 
 #[derive(Debug, Clone)]
 pub enum SearchResult {
@@ -26,6 +27,7 @@ pub enum SearchResult {
 
 impl SearchResult {
     pub fn display_name(&self) -> &str {
+        let _log_guard = logging::function_guard("SearchResult::display_name");
         match self {
             SearchResult::File { name, .. } => name,
             SearchResult::Application { name, .. } => name,
@@ -34,6 +36,7 @@ impl SearchResult {
     }
 
     pub fn path(&self) -> Option<&Path> {
+        let _log_guard = logging::function_guard("SearchResult::path");
         match self {
             SearchResult::File { path, .. } => Some(path),
             SearchResult::Application { desktop_path, .. } => Some(desktop_path),
@@ -50,6 +53,7 @@ pub struct SearchEngine {
 
 impl SearchEngine {
     pub fn new() -> Self {
+        let _log_guard = logging::function_guard("SearchEngine::new");
         Self {
             matcher: SkimMatcherV2::default(),
             file_index: Arc::new(RwLock::new(Vec::new())),
@@ -58,113 +62,135 @@ impl SearchEngine {
     }
 
     pub async fn index_files(&self, search_paths: &[String]) -> Result<()> {
-        let mut results = Vec::new();
-        
-        for path_str in search_paths {
-            let path = Path::new(path_str);
-            if !path.exists() {
-                continue;
-            }
-
-            for entry in WalkDir::new(path)
-                .follow_links(false)
-                .max_depth(10)
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                if entry.file_type().is_file() {
-                    let path = entry.path().to_path_buf();
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        let name_str = name.to_string();
-                        results.push(SearchResult::File {
-                            path,
-                            name: name_str,
-                        });
-                    }
+        let log_guard = logging::function_guard("SearchEngine::index_files");
+        let result = async {
+            let mut results = Vec::new();
+            
+            for path_str in search_paths {
+                let path = Path::new(path_str);
+                if !path.exists() {
+                    continue;
                 }
-            }
-        }
 
-        *self.file_index.write().await = results;
-        Ok(())
-    }
-
-    pub async fn index_applications(&self) -> Result<()> {
-        let mut results = Vec::new();
-        
-        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-        let app_dirs = vec![
-            "/usr/share/applications".to_string(),
-            "/usr/local/share/applications".to_string(),
-            format!("{}/.local/share/applications", home_dir),
-        ];
-
-        for app_dir in app_dirs {
-            let dir = Path::new(&app_dir);
-            if !dir.exists() {
-                continue;
-            }
-
-            for entry in WalkDir::new(dir)
-                .max_depth(1)
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                if entry.file_type().is_file() {
-                    let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("desktop") {
-                        if let Ok(app) = self.parse_desktop_file(path) {
-                            results.push(app);
+                for entry in WalkDir::new(path)
+                    .follow_links(false)
+                    .max_depth(10)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    if entry.file_type().is_file() {
+                        let path = entry.path().to_path_buf();
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                            let name_str = name.to_string();
+                            results.push(SearchResult::File {
+                                path,
+                                name: name_str,
+                            });
                         }
                     }
                 }
             }
-        }
 
-        *self.app_index.write().await = results;
-        Ok(())
+            *self.file_index.write().await = results;
+            Ok(())
+        }.await;
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
+    pub async fn index_applications(&self) -> Result<()> {
+        let log_guard = logging::function_guard("SearchEngine::index_applications");
+        let result = async {
+            let mut results = Vec::new();
+            
+            let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
+            let app_dirs = vec![
+                "/usr/share/applications".to_string(),
+                "/usr/local/share/applications".to_string(),
+                format!("{}/.local/share/applications", home_dir),
+            ];
+
+            for app_dir in app_dirs {
+                let dir = Path::new(&app_dir);
+                if !dir.exists() {
+                    continue;
+                }
+
+                for entry in WalkDir::new(dir)
+                    .max_depth(1)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("desktop") {
+                            if let Ok(app) = self.parse_desktop_file(path) {
+                                results.push(app);
+                            }
+                        }
+                    }
+                }
+            }
+
+            *self.app_index.write().await = results;
+            Ok(())
+        }.await;
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
     }
 
     fn parse_desktop_file(&self, path: &Path) -> Result<SearchResult> {
-        let content = std::fs::read_to_string(path)
-            .context("Failed to read desktop file")?;
-        
-        let mut name = None;
-        let mut exec = None;
-        let mut icon = None;
+        let log_guard = logging::function_guard("SearchEngine::parse_desktop_file");
+        let result = (|| {
+            let content = std::fs::read_to_string(path)
+                .context("Failed to read desktop file")?;
+            
+            let mut name = None;
+            let mut exec = None;
+            let mut icon = None;
 
-        for line in content.lines() {
-            if line.starts_with("Name=") {
-                name = Some(line[5..].trim().to_string());
-            } else if line.starts_with("Exec=") {
-                exec = Some(line[5..].trim().to_string());
-            } else if line.starts_with("Icon=") {
-                icon = Some(line[5..].trim().to_string());
+            for line in content.lines() {
+                if line.starts_with("Name=") {
+                    name = Some(line[5..].trim().to_string());
+                } else if line.starts_with("Exec=") {
+                    exec = Some(line[5..].trim().to_string());
+                } else if line.starts_with("Icon=") {
+                    icon = Some(line[5..].trim().to_string());
+                }
+
+                if name.is_some() && exec.is_some() {
+                    break;
+                }
             }
 
-            if name.is_some() && exec.is_some() {
-                break;
-            }
+            let name = name.unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
+            });
+            
+            let exec = exec.unwrap_or_default();
+
+            Ok(SearchResult::Application {
+                name,
+                exec,
+                icon,
+                desktop_path: path.to_path_buf(),
+            })
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
         }
-
-        let name = name.unwrap_or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        });
-        
-        let exec = exec.unwrap_or_default();
-
-        Ok(SearchResult::Application {
-            name,
-            exec,
-            icon,
-            desktop_path: path.to_path_buf(),
-        })
+        result
     }
 
     pub async fn search(&self, query: &str, max_results: usize) -> Vec<SearchResult> {
+        let _log_guard = logging::function_guard("SearchEngine::search");
         if query.is_empty() {
             return Vec::new();
         }
@@ -201,6 +227,7 @@ impl SearchEngine {
     }
 
     pub async fn find_by_reference(&self, reference: &str) -> Option<SearchResult> {
+        let _log_guard = logging::function_guard("SearchEngine::find_by_reference");
         // Remove @ symbol if present
         let query = reference.strip_prefix('@').unwrap_or(reference);
         

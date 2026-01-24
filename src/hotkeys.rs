@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use crate::config::Config;
+use crate::logging;
 
 pub struct HotkeyManager {
     _manager: GlobalHotKeyManager,
@@ -17,61 +18,76 @@ pub enum HotKeyEvent {
 
 impl HotkeyManager {
     pub fn new(config: &Config) -> Result<Self> {
-        let manager = GlobalHotKeyManager::new()
-            .context("Failed to create hotkey manager")?;
+        let log_guard = logging::function_guard("HotkeyManager::new");
+        let result = (|| {
+            let manager = GlobalHotKeyManager::new()
+                .context("Failed to create hotkey manager")?;
 
-        let show_hide_key: HotKey = config
-            .hotkey_show
-            .parse()
-            .context("Failed to parse show/hide hotkey")?;
-        manager
-            .register(show_hide_key)
-            .context("Failed to register show/hide hotkey")?;
+            let show_hide_key: HotKey = config
+                .hotkey_show
+                .parse()
+                .context("Failed to parse show/hide hotkey")?;
+            manager
+                .register(show_hide_key)
+                .context("Failed to register show/hide hotkey")?;
 
-        let toggle_ai_key: HotKey = config
-            .hotkey_ai_toggle
-            .parse()
-            .context("Failed to parse AI toggle hotkey")?;
-        manager
-            .register(toggle_ai_key)
-            .context("Failed to register AI toggle hotkey")?;
+            let toggle_ai_key: HotKey = config
+                .hotkey_ai_toggle
+                .parse()
+                .context("Failed to parse AI toggle hotkey")?;
+            manager
+                .register(toggle_ai_key)
+                .context("Failed to register AI toggle hotkey")?;
 
-        Ok(Self {
-            _manager: manager,
-            show_hide_id: show_hide_key.id(),
-            toggle_ai_id: toggle_ai_key.id(),
-            last_pressed: std::sync::Mutex::new(None),
-        })
+            Ok(Self {
+                _manager: manager,
+                show_hide_id: show_hide_key.id(),
+                toggle_ai_id: toggle_ai_key.id(),
+                last_pressed: std::sync::Mutex::new(None),
+            })
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
     }
 
     pub fn try_recv(&self) -> Result<Option<HotKeyEvent>> {
-        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            let mut last_pressed = self
-                .last_pressed
-                .lock()
-                .expect("HotkeyManager last_pressed mutex poisoned");
+        let result = (|| {
+            if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+                let log_guard = logging::function_guard("HotkeyManager::try_recv");
+                let mut last_pressed = self
+                    .last_pressed
+                    .lock()
+                    .expect("HotkeyManager last_pressed mutex poisoned");
 
-            match event.state {
-                HotKeyState::Pressed => {
-                    *last_pressed = Some(event.id);
-                }
-                HotKeyState::Released => {
-                    if last_pressed.take() == Some(event.id) {
-                        return Ok(None);
+                match event.state {
+                    HotKeyState::Pressed => {
+                        *last_pressed = Some(event.id);
+                    }
+                    HotKeyState::Released => {
+                        if last_pressed.take() == Some(event.id) {
+                            return Ok(None);
+                        }
                     }
                 }
+
+                if event.id == self.show_hide_id {
+                    return Ok(Some(HotKeyEvent::ShowHide));
+                }
+
+                if event.id == self.toggle_ai_id {
+                    return Ok(Some(HotKeyEvent::ToggleAI));
+                }
             }
 
-            if event.id == self.show_hide_id {
-                return Ok(Some(HotKeyEvent::ShowHide));
-            }
-
-            if event.id == self.toggle_ai_id {
-                return Ok(Some(HotKeyEvent::ToggleAI));
-            }
+            Ok(None)
+        })();
+        if result.is_err() {
+            let log_guard = logging::function_guard("HotkeyManager::try_recv");
+            log_guard.mark_error();
         }
-
-        Ok(None)
+        result
     }
 }
 

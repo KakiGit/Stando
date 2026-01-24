@@ -14,6 +14,7 @@ use crate::ui::SearchWindow;
 use crate::hotkeys::{HotkeyManager, HotKeyEvent};
 use crate::daemon::Daemon;
 use crate::tray::TrayIcon;
+use crate::logging;
 
 pub struct App {
     application: Application,
@@ -29,84 +30,100 @@ pub struct App {
 
 impl App {
     pub fn new(application: Application) -> Result<Self> {
-        // Load config
-        let config = Config::load()
-            .context("Failed to load configuration")?;
+        let log_guard = logging::function_guard("App::new");
+        let result = (|| {
+            // Load config
+            let config = Config::load()
+                .context("Failed to load configuration")?;
 
-        // Initialize search engine
-        let search_engine = Arc::new(SearchEngine::new());
+            // Initialize search engine
+            let search_engine = Arc::new(SearchEngine::new());
 
-        // Initialize AI service if API key is available
-        let ai_service = config.openai_api_key.as_ref().map(|key| {
-            Arc::new(AIService::new(key.clone(), search_engine.clone()))
-        });
-
-        // Create search window
-        let search_window = Arc::new(
-            SearchWindow::new(&application)
-                .context("Failed to create search window")?
-        );
-
-        // Initialize hotkey manager
-        let hotkey_manager = HotkeyManager::new(&config).ok().map(Arc::new);
-
-        // Initialize tray icon
-        let tray_icon = TrayIcon::new(&application).ok().map(Arc::new);
-        if let Some(ref tray) = tray_icon {
-            let search_window_clone = search_window.clone();
-            tray.connect_show(move || {
-                search_window_clone.show();
+            // Initialize AI service if API key is available
+            let ai_service = config.openai_api_key.as_ref().map(|key| {
+                Arc::new(AIService::new(key.clone(), search_engine.clone()))
             });
-            tray.show();
+
+            // Create search window
+            let search_window = Arc::new(
+                SearchWindow::new(&application)
+                    .context("Failed to create search window")?
+            );
+
+            // Initialize hotkey manager
+            let hotkey_manager = HotkeyManager::new(&config).ok().map(Arc::new);
+
+            // Initialize tray icon
+            let tray_icon = TrayIcon::new(&application).ok().map(Arc::new);
+            if let Some(ref tray) = tray_icon {
+                let search_window_clone = search_window.clone();
+                tray.connect_show(move || {
+                    search_window_clone.show();
+                });
+                tray.show();
+            }
+
+            let ai_mode = Arc::new(RwLock::new(false));
+
+            Ok(Self {
+                application,
+                config,
+                search_engine,
+                ai_service,
+                search_window,
+                hotkey_manager,
+                daemon: None,
+                ai_mode,
+                tray_icon,
+            })
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
         }
-
-        let ai_mode = Arc::new(RwLock::new(false));
-
-        Ok(Self {
-            application,
-            config,
-            search_engine,
-            ai_service,
-            search_window,
-            hotkey_manager,
-            daemon: None,
-            ai_mode,
-            tray_icon,
-        })
+        result
     }
 
     pub async fn initialize(&self) -> Result<()> {
-        // Index files and applications
-        self.search_engine
-            .index_files(&self.config.search_paths)
-            .await
-            .context("Failed to index files")?;
-        
-        self.search_engine
-            .index_applications()
-            .await
-            .context("Failed to index applications")?;
+        let log_guard = logging::function_guard("App::initialize");
+        let result = async {
+            // Index files and applications
+            self.search_engine
+                .index_files(&self.config.search_paths)
+                .await
+                .context("Failed to index files")?;
+            
+            self.search_engine
+                .index_applications()
+                .await
+                .context("Failed to index applications")?;
 
-        // Set up UI callbacks
-        self.setup_ui_callbacks()?;
+            // Set up UI callbacks
+            self.setup_ui_callbacks()?;
 
-        // Set up hotkey polling
-        self.setup_hotkey_polling();
+            // Set up hotkey polling
+            self.setup_hotkey_polling();
 
-        // Initialize AI button state
-        self.update_ai_button_state();
+            // Initialize AI button state
+            self.update_ai_button_state();
 
-        // Show the main window on start
-        self.show_window();
+            // Show the main window on start
+            self.show_window();
 
-        Ok(())
+            Ok(())
+        }.await;
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
     }
 
     fn setup_ui_callbacks(&self) -> Result<()> {
-        let search_engine = self.search_engine.clone();
-        let config = self.config.clone();
-        let ai_service = self.ai_service.clone();
-        let ai_mode = self.ai_mode.clone();
+        let log_guard = logging::function_guard("App::setup_ui_callbacks");
+        let result = (|| {
+            let search_engine = self.search_engine.clone();
+            let config = self.config.clone();
+            let ai_service = self.ai_service.clone();
+            let ai_mode = self.ai_mode.clone();
 
         // Search on entry change
         let entry = self.search_window.entry().clone();
@@ -279,10 +296,16 @@ impl App {
             });
         });
 
-        Ok(())
+            Ok(())
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
     }
 
     pub fn setup_hotkey_polling(&self) {
+        let _log_guard = logging::function_guard("App::setup_hotkey_polling");
         if let Some(hotkey_manager) = &self.hotkey_manager {
             let search_window = self.search_window.clone();
             let ai_mode = self.ai_mode.clone();
@@ -323,14 +346,17 @@ impl App {
     }
 
     pub fn show_window(&self) {
+        let _log_guard = logging::function_guard("App::show_window");
         self.search_window.show();
     }
 
     pub fn hide_window(&self) {
+        let _log_guard = logging::function_guard("App::hide_window");
         self.search_window.hide();
     }
 
     fn update_ai_button_state(&self) {
+        let _log_guard = logging::function_guard("App::update_ai_button_state");
         let ai_mode = self.ai_mode.clone();
         let search_window = self.search_window.clone();
         glib::MainContext::default().spawn_local(async move {
@@ -340,6 +366,7 @@ impl App {
     }
 
     pub fn toggle_window(&self) {
+        let _log_guard = logging::function_guard("App::toggle_window");
         if self.search_window.is_visible() {
             self.hide_window();
         } else {
@@ -348,6 +375,7 @@ impl App {
     }
 
     pub fn set_daemon_mode(&mut self, enabled: bool) {
+        let _log_guard = logging::function_guard("App::set_daemon_mode");
         if enabled {
             self.daemon = Some(Arc::new(Daemon::new()));
         } else {
@@ -356,6 +384,7 @@ impl App {
     }
 
     fn open_result(result: &crate::search::SearchResult) {
+        let _log_guard = logging::function_guard("App::open_result");
         match result {
             crate::search::SearchResult::File { path, .. } => {
                 // Open file with default application

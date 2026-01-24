@@ -6,6 +6,7 @@ use adw::Application;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::search::SearchResult;
+use crate::logging;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
@@ -21,6 +22,7 @@ pub struct SearchWindow {
 
 impl SearchWindow {
     pub fn new(app: &Application) -> Result<Self> {
+        let log_guard = logging::function_guard("SearchWindow::new");
         let window = ApplicationWindow::builder()
             .application(app)
             .title("Stando")
@@ -86,29 +88,37 @@ impl SearchWindow {
         let results = Arc::new(RwLock::new(Vec::new()));
         let selected_index = Arc::new(RwLock::new(0));
 
-        Ok(Self {
+        let result = Ok(Self {
             window,
             entry,
             ai_button,
             list_box,
             results,
             selected_index,
-        })
+        });
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
     }
 
     pub fn window(&self) -> &ApplicationWindow {
+        let _log_guard = logging::function_guard("SearchWindow::window");
         &self.window
     }
 
     pub fn entry(&self) -> &Entry {
+        let _log_guard = logging::function_guard("SearchWindow::entry");
         &self.entry
     }
 
     pub fn ai_button(&self) -> &Button {
+        let _log_guard = logging::function_guard("SearchWindow::ai_button");
         &self.ai_button
     }
 
     pub fn set_ai_mode(&self, enabled: bool) {
+        let _log_guard = logging::function_guard("SearchWindow::set_ai_mode");
         if enabled {
             self.ai_button.add_css_class("ai-mode-active");
             self.ai_button.set_tooltip_text(Some("AI Mode: ON (Click to disable)"));
@@ -121,26 +131,31 @@ impl SearchWindow {
     }
 
     pub fn connect_ai_button_clicked<F: Fn() + 'static>(&self, callback: F) {
+        let _log_guard = logging::function_guard("SearchWindow::connect_ai_button_clicked");
         self.ai_button.connect_clicked(move |_| {
             callback();
         });
     }
 
     pub fn show(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::show");
         self.window.set_visible(true);
         self.window.present();
         self.entry.grab_focus();
     }
 
     pub fn hide(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::hide");
         self.window.set_visible(false);
     }
 
     pub fn is_visible(&self) -> bool {
+        let _log_guard = logging::function_guard("SearchWindow::is_visible");
         self.window.is_visible()
     }
 
     pub async fn update_results(&self, new_results: Vec<SearchResult>) {
+        let _log_guard = logging::function_guard("SearchWindow::update_results");
         *self.results.write().await = new_results.clone();
         
         // Clear existing rows
@@ -182,28 +197,33 @@ impl SearchWindow {
     }
 
     pub async fn clear_results(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::clear_results");
         self.update_results(Vec::new()).await;
     }
 
     pub async fn get_selected_result(&self) -> Option<SearchResult> {
+        let _log_guard = logging::function_guard("SearchWindow::get_selected_result");
         let results = self.results.read().await;
         let index = self.selected_index.read().await;
         results.get(*index).cloned()
     }
 
     pub fn connect_activate<F: Fn() + 'static>(&self, callback: F) {
+        let _log_guard = logging::function_guard("SearchWindow::connect_activate");
         self.list_box.connect_row_activated(move |_, _| {
             callback();
         });
     }
 
     pub fn connect_entry_activate<F: Fn() + 'static>(&self, callback: F) {
+        let _log_guard = logging::function_guard("SearchWindow::connect_entry_activate");
         self.entry.connect_activate(move |_| {
             callback();
         });
     }
 
     pub fn connect_key_press<F: Fn(gdk4::Key) -> bool + 'static>(&self, callback: F) {
+        let _log_guard = logging::function_guard("SearchWindow::connect_key_press");
         let controller = gtk4::EventControllerKey::new();
         controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
             let handled = match keyval {
@@ -227,18 +247,22 @@ impl SearchWindow {
     }
 
     pub fn get_query(&self) -> String {
+        let _log_guard = logging::function_guard("SearchWindow::get_query");
         self.entry.text().to_string()
     }
 
     pub fn set_query(&self, query: &str) {
+        let _log_guard = logging::function_guard("SearchWindow::set_query");
         self.entry.set_text(query);
     }
 
     pub fn clear_query(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::clear_query");
         self.entry.set_text("");
     }
 
     pub fn move_selection_down(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::move_selection_down");
         // Move selection down in list
         let current = *self.selected_index.blocking_read();
         let results_len = self.results.blocking_read().len();
@@ -251,6 +275,7 @@ impl SearchWindow {
     }
 
     pub fn move_selection_up(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::move_selection_up");
         // Move selection up in list
         let current = *self.selected_index.blocking_read();
         if current > 0 {
@@ -262,6 +287,7 @@ impl SearchWindow {
     }
 
     pub fn autocomplete_selected(&self) -> bool {
+        let _log_guard = logging::function_guard("SearchWindow::autocomplete_selected");
         let results = self.results.blocking_read();
         let index = *self.selected_index.blocking_read();
         if let Some(result) = results.get(index) {

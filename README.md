@@ -80,6 +80,7 @@ hotkey_ai_toggle = "Ctrl+I"
 5. Press **Esc** to hide the window
 6. Press **Ctrl+I** to toggle AI mode
 7. In AI mode, use **@filename** or **@appname** to reference files/applications
+8. For debug logging, run `stando --verbose` or `RUST_LOG=debug stando`
 
 ## Development
 
