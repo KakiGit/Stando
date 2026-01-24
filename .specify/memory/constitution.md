@@ -59,7 +59,10 @@ core to usability.
 ## Development Workflow
 
 - Run `cargo fmt` and `cargo clippy` for Rust changes; new warnings MUST be
+- Run `cargo test` and ensure all tests pass before merging; new or failing
   resolved.
+- Run `cargo check` to verify type correctness; new or unresolved errors MUST be
+  resolved; new warnings MUST be resolved.
 - Changes to search ranking, hotkey handling, or AI prompts MUST include tests
   or a documented manual verification plan in the spec/plan.
 - User-facing changes MUST update `README.md` and any configuration examples.

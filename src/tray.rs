@@ -1,13 +1,11 @@
+use crate::logging;
+use adw::Application;
 use anyhow::Result;
 use gtk4::prelude::*;
 use gtk4::{MenuButton, PopoverMenu};
-use gio::prelude::*;
-use adw::Application;
-use crate::logging;
 
 pub struct TrayIcon {
     menu_button: MenuButton,
-    popover: PopoverMenu,
 }
 
 impl TrayIcon {
@@ -16,17 +14,17 @@ impl TrayIcon {
         // Create a menu button that can be used as a tray icon
         // In a real implementation, this would integrate with the system tray
         // For now, we create a minimal window that can be minimized to tray
-        
+
         let menu_button = MenuButton::new();
-        
+
         // Create a menu model
         let menu = gio::Menu::new();
         menu.append(Some("Show"), Some("app.show"));
         menu.append(Some("Quit"), Some("app.quit"));
-        
+
         let popover = PopoverMenu::from_model(Some(&menu));
         menu_button.set_popover(Some(&popover));
-        
+
         // Connect quit action via application action
         let quit_action = gio::SimpleAction::new("quit", None);
         let app_for_quit = app.clone();
@@ -34,17 +32,15 @@ impl TrayIcon {
             app_for_quit.quit();
         });
         app.add_action(&quit_action);
-        
-        let result = Ok(Self {
-            menu_button,
-            popover,
-        });
+
+        let result = Ok(Self { menu_button });
         if result.is_err() {
             log_guard.mark_error();
         }
         result
     }
 
+    #[allow(dead_code)]
     pub fn menu_button(&self) -> &MenuButton {
         let _log_guard = logging::function_guard("TrayIcon::menu_button");
         &self.menu_button
@@ -63,6 +59,7 @@ impl TrayIcon {
         self.menu_button.set_visible(true);
     }
 
+    #[allow(dead_code)]
     pub fn hide(&self) {
         let _log_guard = logging::function_guard("TrayIcon::hide");
         self.menu_button.set_visible(false);

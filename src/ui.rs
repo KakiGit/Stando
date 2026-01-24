@@ -1,12 +1,11 @@
+use crate::logging;
+use crate::search::SearchResult;
+use adw::Application;
 use anyhow::Result;
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, Box, Entry, ListBox, ScrolledWindow, Button};
-use glib;
-use adw::Application;
+use gtk4::{ApplicationWindow, Box, Button, Entry, ListBox, ScrolledWindow};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::search::SearchResult;
-use crate::logging;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
@@ -56,10 +55,7 @@ impl SearchWindow {
         // AI mode toggle button
         let ai_button = Button::new();
         ai_button.set_css_classes(&["ai-mode-button"]);
-        ai_button.set_tooltip_text(Some(&format!(
-            "Toggle AI Mode ({})",
-            ai_shortcut
-        )));
+        ai_button.set_tooltip_text(Some(&format!("Toggle AI Mode ({})", ai_shortcut)));
         ai_button.set_label("AI");
         ai_button.set_valign(gtk4::Align::Center);
         search_box.append(&ai_button);
@@ -68,7 +64,7 @@ impl SearchWindow {
         let scrolled = ScrolledWindow::new();
         scrolled.set_hexpand(true);
         scrolled.set_vexpand(true);
-        
+
         let list_box = ListBox::new();
         list_box.set_selection_mode(gtk4::SelectionMode::Single);
         scrolled.set_child(Some(&list_box));
@@ -117,6 +113,7 @@ impl SearchWindow {
         &self.entry
     }
 
+    #[allow(dead_code)]
     pub fn ai_button(&self) -> &Button {
         let _log_guard = logging::function_guard("SearchWindow::ai_button");
         &self.ai_button
@@ -168,14 +165,14 @@ impl SearchWindow {
     pub async fn update_results(&self, new_results: Vec<SearchResult>) {
         let _log_guard = logging::function_guard("SearchWindow::update_results");
         *self.results.write().await = new_results.clone();
-        
+
         // Clear existing rows
         while let Some(row) = self.list_box.row_at_index(0) {
             self.list_box.remove(&row);
         }
 
         // Add new results
-        for (_index, result) in new_results.iter().enumerate() {
+        for result in new_results.iter() {
             let row = gtk4::ListBoxRow::new();
             let display_text = match result {
                 crate::search::SearchResult::Text { content, name } => {
@@ -262,11 +259,13 @@ impl SearchWindow {
         self.entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn set_query(&self, query: &str) {
         let _log_guard = logging::function_guard("SearchWindow::set_query");
         self.entry.set_text(query);
     }
 
+    #[allow(dead_code)]
     pub fn clear_query(&self) {
         let _log_guard = logging::function_guard("SearchWindow::clear_query");
         self.entry.set_text("");

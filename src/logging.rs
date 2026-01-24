@@ -27,7 +27,11 @@ impl FunctionLogGuard {
 impl Drop for FunctionLogGuard {
     fn drop(&mut self) {
         if self.enabled {
-            tracing::debug!(function = self.name, event = "exit", outcome = self.outcome.get());
+            tracing::debug!(
+                function = self.name,
+                event = "exit",
+                outcome = self.outcome.get()
+            );
         }
     }
 }

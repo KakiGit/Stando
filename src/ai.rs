@@ -1,9 +1,9 @@
+use crate::logging;
+use crate::search::{SearchEngine, SearchResult};
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::search::{SearchEngine, SearchResult};
-use crate::logging;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Message {
@@ -25,12 +25,14 @@ struct ChatResponse {
 
 #[derive(Debug, Deserialize)]
 struct Choice {
+    #[allow(dead_code)]
     delta: Option<Delta>,
     message: Option<Message>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Delta {
+    #[allow(dead_code)]
     content: Option<String>,
 }
 
@@ -68,7 +70,7 @@ impl AIService {
                     .map(|(name, content)| format!("File: {}\n{}", name, content))
                     .collect::<Vec<_>>()
                     .join("\n\n");
-                
+
                 messages.push(Message {
                     role: "user".to_string(),
                     content: format!("Context from referenced files:\n\n{}", context_str),
@@ -120,10 +122,7 @@ impl AIService {
         result
     }
 
-    async fn parse_references(
-        &self,
-        query: &str,
-    ) -> Result<Vec<(String, String)>> {
+    async fn parse_references(&self, query: &str) -> Result<Vec<(String, String)>> {
         let log_guard = logging::function_guard("AIService::parse_references");
         let result = async {
             let mut context = Vec::new();
@@ -133,15 +132,12 @@ impl AIService {
             for word in words {
                 if word.starts_with('@') {
                     let reference = word.strip_prefix('@').unwrap();
-                    
+
                     if let Some(result) = self.search_engine.find_by_reference(reference).await {
                         match result {
                             SearchResult::File { path, .. } => {
                                 if let Ok(content) = std::fs::read_to_string(&path) {
-                                    context.push((
-                                        path.display().to_string(),
-                                        content,
-                                    ));
+                                    context.push((path.display().to_string(), content));
                                 }
                             }
                             SearchResult::Application { name, .. } => {
@@ -160,7 +156,8 @@ impl AIService {
             }
 
             Ok(context)
-        }.await;
+        }
+        .await;
         if result.is_err() {
             log_guard.mark_error();
         }

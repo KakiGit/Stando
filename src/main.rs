@@ -1,18 +1,18 @@
-use anyhow::{Context, Result};
 use adw::Application;
-use gtk4::prelude::*;
-use tracing_subscriber;
+use anyhow::{Context, Result};
 use clap::Parser;
+use gtk4::prelude::*;
+use std::rc::Rc;
 
+mod ai;
 mod app;
 mod config;
-mod search;
-mod ai;
-mod ui;
-mod hotkeys;
-mod tray;
 mod daemon;
+mod hotkeys;
 mod logging;
+mod search;
+mod tray;
+mod ui;
 
 use app::App;
 
@@ -29,17 +29,15 @@ fn main() -> Result<()> {
     let log_guard = logging::function_guard("main");
     let result = (|| {
         let args = Args::parse();
-        
+
         // Initialize logging
         let filter = if args.verbose {
             tracing_subscriber::EnvFilter::new("debug")
         } else {
             tracing_subscriber::EnvFilter::from_default_env()
         };
-        
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .init();
+
+        tracing_subscriber::fmt().with_env_filter(filter).init();
 
         // Initialize GTK
         gtk4::init().context("Failed to initialize GTK")?;
@@ -60,9 +58,9 @@ fn main() -> Result<()> {
             };
 
             // Initialize asynchronously using glib's main context
-            let stando_app_for_init = std::sync::Arc::new(stando_app);
+            let stando_app_for_init = Rc::new(stando_app);
             let stando_app_clone = stando_app_for_init.clone();
-            
+
             glib::MainContext::default().spawn_local(async move {
                 if let Err(e) = stando_app_clone.initialize().await {
                     eprintln!("Failed to initialize application: {}", e);
