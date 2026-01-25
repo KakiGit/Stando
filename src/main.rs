@@ -7,11 +7,9 @@ use std::rc::Rc;
 mod ai;
 mod app;
 mod config;
-mod daemon;
 mod history;
 mod logging;
 mod search;
-mod tray;
 mod ui;
 
 use app::App;

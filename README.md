@@ -4,9 +4,9 @@ A next-gen selection based search system for Linux. Stando is a keyboard-oriente
 
 ## Features
 
-- **Run as daemon**: Background process that stays running
-- **System tray integration**: Available in system tray
-- **Global hotkeys**: Win+Space to invoke UI, Esc to hide
+- **Foreground UI**: Launching Stando immediately displays the search window and keeps the process alive for that window only.
+- **Esc to exit**: Pressing Esc hides the window and terminates the app instead of leaving it in the background.
+- **Global hotkeys**: Win+Space to invoke UI
 - **File search**: Search and open files on the host
 - **Application search**: Search and launch applications
 - **AI mode**: Toggle with <Control>i, reference files/apps with @ symbol
@@ -73,11 +73,11 @@ hotkey_ai_toggle = "<Control>i"
 
 ## Usage
 
-1. Start Stando (it will run as a daemon and appear in system tray)
+1. Start Stando to open the search window immediately (the process runs only while that window is visible)
 2. Press **Win+Space** to open the search window
 3. Type to search for files or applications
 4. Press **Enter** to open the selected result
-5. Press **Esc** to hide the window
+5. Press **Esc** to close Stando
 6. Press **<Control>i** to toggle AI mode
 7. In AI mode, use **@filename** or **@appname** to reference files/applications
 8. For debug logging, run `stando --verbose` or `RUST_LOG=debug stando`
@@ -95,12 +95,6 @@ sudo pacman -S gtk4 libadwaita pkg-config rust
 
 ```bash
 cargo run
-```
-
-### Running as daemon
-
-```bash
-cargo run -- --daemon
 ```
 
 ## License

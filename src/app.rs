@@ -1,10 +1,8 @@
 use crate::ai::AIService;
 use crate::config::Config;
-use crate::daemon::Daemon;
 use crate::history::UsageHistory;
 use crate::logging;
 use crate::search::SearchEngine;
-use crate::tray::TrayIcon;
 use crate::ui::SearchWindow;
 use adw::Application;
 use anyhow::{Context, Result};
@@ -24,11 +22,7 @@ pub struct App {
     history: Arc<UsageHistory>,
     ai_service: Option<Arc<AIService>>,
     search_window: Rc<SearchWindow>,
-    #[allow(dead_code)]
-    daemon: Option<Arc<Daemon>>,
     ai_mode: Arc<RwLock<bool>>,
-    #[allow(dead_code)]
-    tray_icon: Option<Arc<TrayIcon>>,
 }
 
 impl App {
@@ -56,16 +50,6 @@ impl App {
                     .context("Failed to create search window")?,
             );
 
-            // Initialize tray icon
-            let tray_icon = TrayIcon::new(&application).ok().map(Arc::new);
-            if let Some(ref tray) = tray_icon {
-                let search_window_clone = search_window.clone();
-                tray.connect_show(move || {
-                    search_window_clone.show();
-                });
-                tray.show();
-            }
-
             let ai_mode = Arc::new(RwLock::new(false));
 
             Ok(Self {
@@ -75,9 +59,7 @@ impl App {
                 history,
                 ai_service,
                 search_window,
-                daemon: None,
                 ai_mode,
-                tray_icon,
             })
         })();
         if result.is_err() {
@@ -226,11 +208,13 @@ impl App {
             let ai_mode_clone = ai_mode.clone();
             let ai_service_clone = ai_service.clone();
             let history_for_entry = history.clone();
+            let application_for_entry = self.application.clone();
             self.search_window.connect_entry_activate(move || {
             let search_window_clone = search_window_activate.clone();
             let ai_mode = ai_mode_clone.clone();
             let ai_service = ai_service_clone.clone();
             let history = history_for_entry.clone();
+            let application = application_for_entry.clone();
             glib::MainContext::default().spawn_local(async move {
                 // Check if AI mode is enabled
                 let is_ai_mode = *ai_mode.read().await;
@@ -297,6 +281,7 @@ impl App {
                             Self::open_result(&result);
                             Self::record_result_usage(history.clone(), &result);
                             search_window_clone.hide();
+                            application.quit();
                         }
                     }
             });
@@ -305,24 +290,29 @@ impl App {
             // Handle list activation
             let search_window_list = self.search_window.clone();
             let history_for_list_activate = history.clone();
+            let application_for_list_activate = self.application.clone();
             self.search_window.connect_activate(move || {
                 let search_window_clone = search_window_list.clone();
                 let history = history_for_list_activate.clone();
+                let application = application_for_list_activate.clone();
                 glib::MainContext::default().spawn_local(async move {
                     if let Some(result) = search_window_clone.get_selected_result().await {
                         Self::open_result(&result);
                         Self::record_result_usage(history.clone(), &result);
                         search_window_clone.hide();
+                        application.quit();
                     }
                 });
             });
 
             // Handle Escape key
             let search_window_key = self.search_window.clone();
+            let application_for_esc = self.application.clone();
             self.search_window
                 .connect_key_press(move |keyval| match keyval {
                     key if key == Key::Escape => {
                         search_window_key.hide();
+                        application_for_esc.quit();
                         true
                     }
                     key if key == Key::Up || key == Key::KP_Up => {
@@ -422,10 +412,7 @@ impl App {
                 controller.add_shortcut(shortcut);
                 self.search_window.window().add_controller(controller);
             } else {
-                tracing::error!(
-                    "Failed to parse global hotkey: {}",
-                    self.config.hotkey_show
-                );
+                tracing::error!("Failed to parse global hotkey: {}", self.config.hotkey_show);
                 log_guard.mark_error();
             }
 
@@ -491,16 +478,6 @@ impl App {
             self.hide_window();
         } else {
             self.show_window();
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_daemon_mode(&mut self, enabled: bool) {
-        let _log_guard = logging::function_guard("App::set_daemon_mode");
-        if enabled {
-            self.daemon = Some(Arc::new(Daemon::new()));
-        } else {
-            self.daemon = None;
         }
     }
 

@@ -26,6 +26,11 @@
 
 ## Important Constraints
 [List any technical, business, or regulatory constraints]
+* always run `cargo build` after making changes; fix warning and errors
+* always run `cargo fmt` before making a commit; fix warning and errors
+* always run `cargo test` before making a commit, fix warning and errors
+* always run `cargo clippy` before submitting code; fix warning and errors
+* fix all warnings from `cargo check` before making a commit
 
 ## External Dependencies
 [Document key external services, APIs, or systems]
