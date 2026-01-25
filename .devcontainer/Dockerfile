@@ -23,7 +23,8 @@ RUN apt-get update && apt-get install -y \
 RUN sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
 ENV LANG en_US.UTF-8
 
-RUN npm i -g @openai/codex
+RUN npm i -g @openai/codex && \
+    npm install -g @fission-ai/openspec@latest
 
 RUN chmod 0777 /tmp
 

@@ -1,7 +1,9 @@
+use crate::history::UsageHistory;
 use crate::logging;
 use anyhow::{Context, Result};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -37,6 +39,16 @@ impl SearchResult {
         }
     }
 
+    pub fn history_id(&self) -> Option<String> {
+        match self {
+            SearchResult::File { path, .. } => Some(format!("file:{}", path.display())),
+            SearchResult::Application { desktop_path, .. } => {
+                Some(format!("app:{}", desktop_path.display()))
+            }
+            SearchResult::Text { .. } => None,
+        }
+    }
+
     #[allow(dead_code)]
     pub fn path(&self) -> Option<&Path> {
         let _log_guard = logging::function_guard("SearchResult::path");
@@ -52,15 +64,17 @@ pub struct SearchEngine {
     matcher: SkimMatcherV2,
     file_index: Arc<RwLock<Vec<SearchResult>>>,
     app_index: Arc<RwLock<Vec<SearchResult>>>,
+    history: Arc<UsageHistory>,
 }
 
 impl SearchEngine {
-    pub fn new() -> Self {
+    pub fn new(history: Arc<UsageHistory>) -> Self {
         let _log_guard = logging::function_guard("SearchEngine::new");
         Self {
             matcher: SkimMatcherV2::default(),
             file_index: Arc::new(RwLock::new(Vec::new())),
             app_index: Arc::new(RwLock::new(Vec::new())),
+            history,
         }
     }
 
@@ -195,9 +209,9 @@ impl SearchEngine {
 
     pub async fn search(&self, query: &str, max_results: usize) -> Vec<SearchResult> {
         let _log_guard = logging::function_guard("SearchEngine::search");
-        if query.is_empty() {
-            return Vec::new();
-        }
+        // if query.is_empty() {
+        //     return Vec::new();
+        // }
 
         let mut results = Vec::new();
 
@@ -221,8 +235,23 @@ impl SearchEngine {
             }
         }
 
-        // Sort by score (higher is better) and take top results
-        results.sort_by(|a, b| b.0.cmp(&a.0));
+        let counts = self.history.snapshot().await;
+        results.sort_by(|a, b| {
+            let a_result = &a.1;
+            let b_result = &b.1;
+            let a_count = a_result
+                .history_id()
+                .and_then(|id| counts.get(&id).copied())
+                .unwrap_or(0);
+            let b_count = b_result
+                .history_id()
+                .and_then(|id| counts.get(&id).copied())
+                .unwrap_or(0);
+            match b_count.cmp(&a_count) {
+                Ordering::Equal => b.0.cmp(&a.0),
+                ord => ord,
+            }
+        });
         results
             .into_iter()
             .take(max_results)

@@ -1,6 +1,7 @@
 use crate::ai::AIService;
 use crate::config::Config;
 use crate::daemon::Daemon;
+use crate::history::UsageHistory;
 use crate::hotkeys::{HotKeyEvent, HotkeyManager};
 use crate::logging;
 use crate::search::SearchEngine;
@@ -21,6 +22,7 @@ pub struct App {
     application: Application,
     config: Config,
     search_engine: Arc<SearchEngine>,
+    history: Arc<UsageHistory>,
     ai_service: Option<Arc<AIService>>,
     search_window: Rc<SearchWindow>,
     hotkey_manager: Option<Arc<HotkeyManager>>,
@@ -38,8 +40,11 @@ impl App {
             // Load config
             let config = Config::load().context("Failed to load configuration")?;
 
+            // Initialize usage history
+            let history = Arc::new(UsageHistory::load());
+
             // Initialize search engine
-            let search_engine = Arc::new(SearchEngine::new());
+            let search_engine = Arc::new(SearchEngine::new(history.clone()));
 
             // Initialize AI service if API key is available
             let ai_service = config
@@ -72,6 +77,7 @@ impl App {
                 application,
                 config,
                 search_engine,
+                history,
                 ai_service,
                 search_window,
                 hotkey_manager,
@@ -100,6 +106,7 @@ impl App {
                 .await
                 .context("Failed to index applications")?;
 
+
             // Set up UI callbacks
             self.setup_ui_callbacks()?;
 
@@ -111,6 +118,8 @@ impl App {
 
             // Initialize AI button state
             self.update_ai_button_state();
+
+            self.spawn_reset_content();
 
             // Show the main window on start
             self.show_window();
@@ -124,30 +133,87 @@ impl App {
         result
     }
 
+    fn spawn_reset_content(&self) {
+        let search_engine = self.search_engine.clone();
+        let config = self.config.clone();
+        let search_window = self.search_window.clone();
+        let ai_mode = self.ai_mode.clone();
+        glib::MainContext::default().spawn_local(async move {
+            Self::reset_content(
+                search_window, search_engine,
+                config, ai_mode
+                ).await.ok();
+        });
+    }
+
+    async fn reset_content(
+        search_window: Rc<SearchWindow>, search_engine: Arc<SearchEngine>,
+        config: Config, ai_mode: Arc<RwLock<bool>>
+        ) -> Result<()> {
+        let log_guard = logging::function_guard("App::reset_content");
+        let result = {
+            if *ai_mode.read().await {
+                search_window.clear_results().await;
+                return Ok(());
+            } else {
+                let results = search_engine
+                    .search("", config.max_results)
+                    .await;
+                search_window.update_results(results).await;
+            }
+            Ok(())
+        };
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
+    fn setup_entry_callbacks(&self) -> Result<()> {
+        let log_guard = logging::function_guard("App::setup_entry_callbacks");
+        let result = {
+            Ok(())
+        };
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
     fn setup_ui_callbacks(&self) -> Result<()> {
         let log_guard = logging::function_guard("App::setup_ui_callbacks");
         let result = {
+
             let search_engine = self.search_engine.clone();
             let config = self.config.clone();
             let ai_service = self.ai_service.clone();
             let ai_mode = self.ai_mode.clone();
+            let history = self.history.clone();
 
             // Search on entry change
+            let search_engine = self.search_engine.clone();
             let entry = self.search_window.entry().clone();
             let search_window_for_entry = self.search_window.clone();
             let ai_mode_for_entry = ai_mode.clone();
+
             entry.connect_changed(move |entry| {
                 let query = entry.text().to_string();
                 let search_window = search_window_for_entry.clone();
                 let search_engine = search_engine.clone();
                 let max_results = config.max_results;
                 let ai_mode = ai_mode_for_entry.clone();
+                let config = config.clone();
 
                 // Perform search asynchronously
                 glib::MainContext::default().spawn_local(async move {
                     let is_ai_mode = *ai_mode.read().await;
                     if query.is_empty() {
-                        search_window.clear_results().await;
+                        Self::reset_content(
+                            search_window,
+                            search_engine,
+                            config,
+                            ai_mode,
+                        ).await;
                         return;
                     }
 
@@ -161,7 +227,12 @@ impl App {
                             let results = search_engine.search(search_query, max_results).await;
                             search_window.update_results(results).await;
                         } else {
-                            search_window.clear_results().await;
+                            Self::reset_content(
+                                search_window,
+                                search_engine,
+                                config,
+                                ai_mode,
+                            ).await;
                         }
                         return;
                     }
@@ -175,10 +246,12 @@ impl App {
             let search_window_activate = self.search_window.clone();
             let ai_mode_clone = ai_mode.clone();
             let ai_service_clone = ai_service.clone();
+            let history_for_entry = history.clone();
             self.search_window.connect_entry_activate(move || {
             let search_window_clone = search_window_activate.clone();
             let ai_mode = ai_mode_clone.clone();
             let ai_service = ai_service_clone.clone();
+            let history = history_for_entry.clone();
             glib::MainContext::default().spawn_local(async move {
                 // Check if AI mode is enabled
                 let is_ai_mode = *ai_mode.read().await;
@@ -239,26 +312,31 @@ impl App {
                         };
                         search_window_clone.update_results(vec![error_result]).await;
                     }
-                } else {
-                    // Normal mode: open selected result
-                    if let Some(result) = search_window_clone.get_selected_result().await {
-                        Self::open_result(&result);
-                        search_window_clone.hide();
+                    } else {
+                        // Normal mode: open selected result
+                        if let Some(result) = search_window_clone.get_selected_result().await {
+                            Self::open_result(&result);
+                            Self::record_result_usage(history.clone(), &result);
+                            search_window_clone.hide();
+                        }
                     }
-                }
             });
         });
 
             // Handle list activation
             let search_window_list = self.search_window.clone();
+            let history_for_list_activate = history.clone();
             self.search_window.connect_activate(move || {
                 let search_window_clone = search_window_list.clone();
+                let history = history_for_list_activate.clone();
                 glib::MainContext::default().spawn_local(async move {
                     if let Some(result) = search_window_clone.get_selected_result().await {
                         Self::open_result(&result);
+                        Self::record_result_usage(history.clone(), &result);
                         search_window_clone.hide();
                     }
                 });
+
             });
 
             // Handle Escape key
@@ -286,8 +364,11 @@ impl App {
             // Handle AI button click
             let ai_mode_clone = ai_mode.clone();
             let search_window_ai = self.search_window.clone();
+            let search_engine = self.search_engine.clone();
+            let config = self.config.clone();
             self.search_window.connect_ai_button_clicked(move || {
-                Self::spawn_toggle_ai(ai_mode_clone.clone(), search_window_ai.clone());
+                Self::spawn_toggle_ai(ai_mode_clone.clone(), search_window_ai.clone(),
+                    search_engine.clone(), config.clone());
             });
 
             Ok(())
@@ -330,8 +411,11 @@ impl App {
             let action = gio::SimpleAction::new("toggle-ai-mode", None);
             let ai_mode = self.ai_mode.clone();
             let search_window = self.search_window.clone();
+            let search_engine = self.search_engine.clone();
+            let config = self.config.clone();
             action.connect_activate(move |_, _| {
-                Self::spawn_toggle_ai(ai_mode.clone(), search_window.clone());
+                Self::spawn_toggle_ai(ai_mode.clone(), search_window.clone(),
+                    search_engine.clone(), config.clone());
             });
             window.add_action(&action);
 
@@ -355,22 +439,34 @@ impl App {
         result
     }
 
-    fn spawn_toggle_ai(ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>) {
+    fn spawn_toggle_ai(
+        ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>,
+        search_engine: Arc<SearchEngine>, config: Config
+        ) {
         glib::MainContext::default().spawn_local(async move {
-            Self::toggle_ai_mode(ai_mode, search_window).await;
+            Self::toggle_ai_mode(
+                ai_mode, search_window,
+                search_engine, config
+                ).await;
         });
     }
 
-    async fn toggle_ai_mode(ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>) {
+    async fn toggle_ai_mode(
+        ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>,
+        search_engine: Arc<SearchEngine>, config: Config,
+    ) {
         let mut mode = ai_mode.write().await;
         *mode = !*mode;
         let enabled = *mode;
         drop(mode);
         // Update UI to show AI mode status
         search_window.set_ai_mode(enabled);
-        if enabled {
-            search_window.clear_results().await;
-        }
+        Self::reset_content(
+            search_window,
+            search_engine,
+            config,
+            ai_mode.clone(),
+        ).await;
     }
 
     pub fn show_window(&self) {
@@ -450,6 +546,14 @@ impl App {
                 // Text results (like AI responses) don't need to be opened
                 // They're just displayed in the list
             }
+        }
+    }
+
+    fn record_result_usage(history: Arc<UsageHistory>, result: &crate::search::SearchResult) {
+        if let Some(id) = result.history_id() {
+            glib::MainContext::default().spawn_local(async move {
+                history.record_launch(id).await;
+            });
         }
     }
 }
