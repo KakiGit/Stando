@@ -202,14 +202,14 @@ impl SearchEngine {
         let mut results = Vec::new();
 
         // Search files
-        {
-            let file_index = self.file_index.read().await;
-            for result in file_index.iter() {
-                if let Some(score) = self.matcher.fuzzy_match(result.display_name(), query) {
-                    results.push((score, result.clone()));
-                }
-            }
-        }
+        // {
+        //     let file_index = self.file_index.read().await;
+        //     for result in file_index.iter() {
+        //         if let Some(score) = self.matcher.fuzzy_match(result.display_name(), query) {
+        //             results.push((score, result.clone()));
+        //         }
+        //     }
+        // }
 
         // Search applications
         {
@@ -236,17 +236,17 @@ impl SearchEngine {
         let query = reference.strip_prefix('@').unwrap_or(reference);
 
         // Search in both indexes
-        let file_index = self.file_index.read().await;
-        for result in file_index.iter() {
-            if result
-                .display_name()
-                .to_lowercase()
-                .contains(&query.to_lowercase())
-            {
-                return Some(result.clone());
-            }
-        }
-        drop(file_index);
+        // let file_index = self.file_index.read().await;
+        // for result in file_index.iter() {
+        //     if result
+        //         .display_name()
+        //         .to_lowercase()
+        //         .contains(&query.to_lowercase())
+        //     {
+        //         return Some(result.clone());
+        //     }
+        // }
+        // drop(file_index);
 
         let app_index = self.app_index.read().await;
         for result in app_index.iter() {

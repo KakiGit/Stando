@@ -83,7 +83,7 @@ impl SearchWindow {
         }
 
         // Initially hidden
-        window.set_visible(false);
+        // window.set_visible(false);
 
         let results = Arc::new(RwLock::new(Vec::new()));
         let selected_index = Arc::new(RwLock::new(0));

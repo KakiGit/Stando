@@ -90,10 +90,10 @@ impl App {
         let log_guard = logging::function_guard("App::initialize");
         let result = async {
             // Index files and applications
-            self.search_engine
-                .index_files(&self.config.search_paths)
-                .await
-                .context("Failed to index files")?;
+            // self.search_engine
+            //     .index_files(&self.config.search_paths)
+            //     .await
+            //     .context("Failed to index files")?;
 
             self.search_engine
                 .index_applications()
