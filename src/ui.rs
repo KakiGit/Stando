@@ -2,6 +2,10 @@ use crate::logging;
 use crate::search::SearchResult;
 use adw::Application;
 use anyhow::Result;
+use gdk4::prelude::*;
+use gdk4::{Display, Monitor, Rectangle};
+use gio::prelude::ListModelExt;
+use glib::prelude::Cast;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box, Button, Entry, ListBox, ScrolledWindow};
 use std::sync::Arc;
@@ -9,6 +13,8 @@ use tokio::sync::RwLock;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
+const DEFAULT_WINDOW_WIDTH: i32 = 800;
+const DEFAULT_WINDOW_HEIGHT: i32 = 600;
 
 pub struct SearchWindow {
     window: ApplicationWindow,
@@ -26,11 +32,12 @@ impl SearchWindow {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("Stando")
-            .default_width(800)
-            .default_height(600)
             .resizable(true)
             .decorated(false)
             .build();
+
+        // Center and size the window before showing it.
+        Self::configure_window_geometry(&window);
 
         // Main container
         let main_box = Box::new(gtk4::Orientation::Vertical, 0);
@@ -313,5 +320,29 @@ impl SearchWindow {
         } else {
             false
         }
+    }
+
+    fn configure_window_geometry(window: &ApplicationWindow) {
+        let (width, height) = Self::calculate_window_dimensions();
+        window.set_default_size(width, height);
+    }
+
+    fn calculate_window_dimensions() -> (i32, i32) {
+        Self::primary_monitor_geometry()
+            .map(|geometry| {
+                (
+                    (geometry.width() / 2).max(1),
+                    (geometry.height() / 2).max(1),
+                )
+            })
+            .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT))
+    }
+
+    fn primary_monitor_geometry() -> Option<Rectangle> {
+        let display = Display::default()?;
+        let monitors = display.monitors();
+        let monitor_object = monitors.item(0)?;
+        let monitor = monitor_object.downcast::<Monitor>().ok()?;
+        Some(monitor.geometry())
     }
 }
