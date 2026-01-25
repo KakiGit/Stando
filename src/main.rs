@@ -9,7 +9,6 @@ mod app;
 mod config;
 mod daemon;
 mod history;
-mod hotkeys;
 mod logging;
 mod search;
 mod tray;

@@ -2,7 +2,6 @@ use crate::ai::AIService;
 use crate::config::Config;
 use crate::daemon::Daemon;
 use crate::history::UsageHistory;
-use crate::hotkeys::{HotKeyEvent, HotkeyManager};
 use crate::logging;
 use crate::search::SearchEngine;
 use crate::tray::TrayIcon;
@@ -25,7 +24,6 @@ pub struct App {
     history: Arc<UsageHistory>,
     ai_service: Option<Arc<AIService>>,
     search_window: Rc<SearchWindow>,
-    hotkey_manager: Option<Arc<HotkeyManager>>,
     #[allow(dead_code)]
     daemon: Option<Arc<Daemon>>,
     ai_mode: Arc<RwLock<bool>>,
@@ -58,9 +56,6 @@ impl App {
                     .context("Failed to create search window")?,
             );
 
-            // Initialize hotkey manager
-            let hotkey_manager = HotkeyManager::new(&config).ok().map(Arc::new);
-
             // Initialize tray icon
             let tray_icon = TrayIcon::new(&application).ok().map(Arc::new);
             if let Some(ref tray) = tray_icon {
@@ -80,7 +75,6 @@ impl App {
                 history,
                 ai_service,
                 search_window,
-                hotkey_manager,
                 daemon: None,
                 ai_mode,
                 tray_icon,
@@ -106,15 +100,14 @@ impl App {
                 .await
                 .context("Failed to index applications")?;
 
-
             // Set up UI callbacks
             self.setup_ui_callbacks()?;
 
             // Set up window-local shortcuts
             self.setup_window_shortcuts()?;
 
-            // Set up hotkey polling
-            self.setup_hotkey_polling();
+            // Set up global shortcuts
+            self.setup_global_shortcuts()?;
 
             // Initialize AI button state
             self.update_ai_button_state();
@@ -139,26 +132,25 @@ impl App {
         let search_window = self.search_window.clone();
         let ai_mode = self.ai_mode.clone();
         glib::MainContext::default().spawn_local(async move {
-            Self::reset_content(
-                search_window, search_engine,
-                config, ai_mode
-                ).await.ok();
+            Self::reset_content(search_window, search_engine, config, ai_mode)
+                .await
+                .ok();
         });
     }
 
     async fn reset_content(
-        search_window: Rc<SearchWindow>, search_engine: Arc<SearchEngine>,
-        config: Config, ai_mode: Arc<RwLock<bool>>
-        ) -> Result<()> {
+        search_window: Rc<SearchWindow>,
+        search_engine: Arc<SearchEngine>,
+        config: Config,
+        ai_mode: Arc<RwLock<bool>>,
+    ) -> Result<()> {
         let log_guard = logging::function_guard("App::reset_content");
         let result = {
             if *ai_mode.read().await {
                 search_window.clear_results().await;
                 return Ok(());
             } else {
-                let results = search_engine
-                    .search("", config.max_results)
-                    .await;
+                let results = search_engine.search("", config.max_results).await;
                 search_window.update_results(results).await;
             }
             Ok(())
@@ -171,9 +163,7 @@ impl App {
 
     fn setup_entry_callbacks(&self) -> Result<()> {
         let log_guard = logging::function_guard("App::setup_entry_callbacks");
-        let result = {
-            Ok(())
-        };
+        let result = { Ok(()) };
         if result.is_err() {
             log_guard.mark_error();
         }
@@ -183,8 +173,6 @@ impl App {
     fn setup_ui_callbacks(&self) -> Result<()> {
         let log_guard = logging::function_guard("App::setup_ui_callbacks");
         let result = {
-
-            let search_engine = self.search_engine.clone();
             let config = self.config.clone();
             let ai_service = self.ai_service.clone();
             let ai_mode = self.ai_mode.clone();
@@ -208,12 +196,7 @@ impl App {
                 glib::MainContext::default().spawn_local(async move {
                     let is_ai_mode = *ai_mode.read().await;
                     if query.is_empty() {
-                        Self::reset_content(
-                            search_window,
-                            search_engine,
-                            config,
-                            ai_mode,
-                        ).await;
+                        Self::reset_content(search_window, search_engine, config, ai_mode).await;
                         return;
                     }
 
@@ -227,12 +210,8 @@ impl App {
                             let results = search_engine.search(search_query, max_results).await;
                             search_window.update_results(results).await;
                         } else {
-                            Self::reset_content(
-                                search_window,
-                                search_engine,
-                                config,
-                                ai_mode,
-                            ).await;
+                            Self::reset_content(search_window, search_engine, config, ai_mode)
+                                .await;
                         }
                         return;
                     }
@@ -336,7 +315,6 @@ impl App {
                         search_window_clone.hide();
                     }
                 });
-
             });
 
             // Handle Escape key
@@ -367,8 +345,12 @@ impl App {
             let search_engine = self.search_engine.clone();
             let config = self.config.clone();
             self.search_window.connect_ai_button_clicked(move || {
-                Self::spawn_toggle_ai(ai_mode_clone.clone(), search_window_ai.clone(),
-                    search_engine.clone(), config.clone());
+                Self::spawn_toggle_ai(
+                    ai_mode_clone.clone(),
+                    search_window_ai.clone(),
+                    search_engine.clone(),
+                    config.clone(),
+                );
             });
 
             Ok(())
@@ -377,31 +359,6 @@ impl App {
             log_guard.mark_error();
         }
         result
-    }
-
-    pub fn setup_hotkey_polling(&self) {
-        let _log_guard = logging::function_guard("App::setup_hotkey_polling");
-        if let Some(hotkey_manager) = &self.hotkey_manager {
-            let search_window = self.search_window.clone();
-            let hotkey_manager = hotkey_manager.clone();
-
-            // Poll for hotkey events
-            glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                if let Ok(Some(event)) = hotkey_manager.try_recv() {
-                    match event {
-                        HotKeyEvent::ShowHide => {
-                            println!("Show Hide");
-                            if search_window.is_visible() {
-                                search_window.hide();
-                            } else {
-                                search_window.show();
-                            }
-                        }
-                    }
-                }
-                glib::ControlFlow::Continue
-            });
-        }
     }
 
     fn setup_window_shortcuts(&self) -> Result<()> {
@@ -414,8 +371,12 @@ impl App {
             let search_engine = self.search_engine.clone();
             let config = self.config.clone();
             action.connect_activate(move |_, _| {
-                Self::spawn_toggle_ai(ai_mode.clone(), search_window.clone(),
-                    search_engine.clone(), config.clone());
+                Self::spawn_toggle_ai(
+                    ai_mode.clone(),
+                    search_window.clone(),
+                    search_engine.clone(),
+                    config.clone(),
+                );
             });
             window.add_action(&action);
 
@@ -439,21 +400,59 @@ impl App {
         result
     }
 
+    fn setup_global_shortcuts(&self) -> Result<()> {
+        let log_guard = logging::function_guard("App::setup_global_shortcuts");
+        let result = {
+            let action = gio::SimpleAction::new("toggle-show-hide", None);
+            let search_window = self.search_window.clone();
+            action.connect_activate(move |_, _| {
+                if search_window.is_visible() {
+                    search_window.hide();
+                } else {
+                    search_window.show();
+                }
+            });
+            self.application.add_action(&action);
+
+            if let Some(trigger) = gtk4::ShortcutTrigger::parse_string(&self.config.hotkey_show) {
+                let named_action = gtk4::NamedAction::new("app.toggle-show-hide");
+                let shortcut = gtk4::Shortcut::new(Some(trigger), Some(named_action));
+                let controller = gtk4::ShortcutController::new();
+                controller.set_scope(gtk4::ShortcutScope::Global);
+                controller.add_shortcut(shortcut);
+                self.search_window.window().add_controller(controller);
+            } else {
+                tracing::error!(
+                    "Failed to parse global hotkey: {}",
+                    self.config.hotkey_show
+                );
+                log_guard.mark_error();
+            }
+
+            Ok(())
+        };
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
     fn spawn_toggle_ai(
-        ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>,
-        search_engine: Arc<SearchEngine>, config: Config
-        ) {
+        ai_mode: Arc<RwLock<bool>>,
+        search_window: Rc<SearchWindow>,
+        search_engine: Arc<SearchEngine>,
+        config: Config,
+    ) {
         glib::MainContext::default().spawn_local(async move {
-            Self::toggle_ai_mode(
-                ai_mode, search_window,
-                search_engine, config
-                ).await;
+            Self::toggle_ai_mode(ai_mode, search_window, search_engine, config).await;
         });
     }
 
     async fn toggle_ai_mode(
-        ai_mode: Arc<RwLock<bool>>, search_window: Rc<SearchWindow>,
-        search_engine: Arc<SearchEngine>, config: Config,
+        ai_mode: Arc<RwLock<bool>>,
+        search_window: Rc<SearchWindow>,
+        search_engine: Arc<SearchEngine>,
+        config: Config,
     ) {
         let mut mode = ai_mode.write().await;
         *mode = !*mode;
@@ -461,12 +460,7 @@ impl App {
         drop(mode);
         // Update UI to show AI mode status
         search_window.set_ai_mode(enabled);
-        Self::reset_content(
-            search_window,
-            search_engine,
-            config,
-            ai_mode.clone(),
-        ).await;
+        Self::reset_content(search_window, search_engine, config, ai_mode.clone()).await;
     }
 
     pub fn show_window(&self) {
