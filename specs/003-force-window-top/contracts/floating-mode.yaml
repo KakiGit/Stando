@@ -1,0 +1,68 @@
+openapi: 3.1.0
+info:
+  title: Floating Window Control
+  version: 1.0.0
+servers:
+  - url: http://local.stando
+    description: Local control plane for window hints
+paths:
+  /window/floating:
+    get:
+      summary: Read the current floating status
+      responses:
+        '200':
+          description: Current floating state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  workspaceId:
+                    type: string
+                    nullable: true
+                  displayId:
+                    type: string
+                    nullable: true
+                  overrideState:
+                    type: string
+                    enum: [success, blocked]
+    post:
+      summary: Update floating state
+      requestBody:
+        description: Set desired floating mode
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                persistPreference:
+                  type: boolean
+              required:
+                - enabled
+      responses:
+        '200':
+          description: Result of applying the request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effectiveState:
+                    type: string
+                    enum: [floating, normal]
+                  message:
+                    type: string
+                  workspaceId:
+                    type: string
+                    nullable: true
+                  displayId:
+                    type: string
+                    nullable: true
+                  fallbackReason:
+                    type: string
+                    nullable: true

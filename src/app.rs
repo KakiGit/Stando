@@ -4,11 +4,13 @@ use crate::history::UsageHistory;
 use crate::logging;
 use crate::search::SearchEngine;
 use crate::ui::SearchWindow;
+use crate::window::FloatingWindowController;
 use adw::Application;
 use anyhow::{Context, Result};
 use futures::channel::oneshot;
 use gdk4::Key;
 use gtk4::prelude::*;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
@@ -23,6 +25,8 @@ pub struct App {
     ai_service: Option<Arc<AIService>>,
     search_window: Rc<SearchWindow>,
     ai_mode: Arc<RwLock<bool>>,
+    #[allow(dead_code)]
+    floating_controller: Rc<RefCell<FloatingWindowController>>,
 }
 
 impl App {
@@ -50,6 +54,11 @@ impl App {
                     .context("Failed to create search window")?,
             );
 
+            let floating_controller = Rc::new(RefCell::new(FloatingWindowController::new(
+                &application,
+                config.floating_preference.clone(),
+            )));
+
             let ai_mode = Arc::new(RwLock::new(false));
 
             Ok(Self {
@@ -60,6 +69,7 @@ impl App {
                 ai_service,
                 search_window,
                 ai_mode,
+                floating_controller,
             })
         })();
         if result.is_err() {

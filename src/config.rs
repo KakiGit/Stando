@@ -6,6 +6,25 @@ use std::path::PathBuf;
 use xdg::BaseDirectories;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FloatingPreference {
+    pub enabled: bool,
+    pub preferred_workspace: Option<String>,
+    pub preferred_display: Option<String>,
+}
+
+impl Default for FloatingPreference {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preferred_workspace: None,
+            preferred_display: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     pub openai_api_key: Option<String>,
     pub search_paths: Vec<String>,
@@ -13,6 +32,7 @@ pub struct Config {
     pub hotkey_show: String,
     /// Window-local shortcut for toggling AI mode.
     pub hotkey_ai_toggle: String,
+    pub floating_preference: FloatingPreference,
 }
 
 impl Default for Config {
@@ -24,6 +44,7 @@ impl Default for Config {
             max_results: 20,
             hotkey_show: "Super+Space".to_string(),
             hotkey_ai_toggle: "<Control>i".to_string(),
+            floating_preference: FloatingPreference::default(),
         }
     }
 }
@@ -94,6 +115,22 @@ impl Config {
             xdg_dirs
                 .place_config_file("config.toml")
                 .context("Failed to get config file path")
+        })();
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
+    pub fn floating_preference(&self) -> &FloatingPreference {
+        &self.floating_preference
+    }
+
+    pub fn set_floating_preference(&mut self, preference: FloatingPreference) -> Result<()> {
+        let log_guard = logging::function_guard("Config::set_floating_preference");
+        let result = (|| {
+            self.floating_preference = preference;
+            self.save()
         })();
         if result.is_err() {
             log_guard.mark_error();

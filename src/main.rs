@@ -11,6 +11,7 @@ mod history;
 mod logging;
 mod search;
 mod ui;
+mod window;
 
 use app::App;
 

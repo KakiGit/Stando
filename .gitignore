@@ -8,3 +8,6 @@ target/
 .vscode/
 .DS_Store
 Thumbs.db
+debug/
+release/
+*.rlib
