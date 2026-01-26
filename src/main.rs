@@ -22,6 +22,9 @@ struct Args {
     /// Enable verbose logging (equivalent to RUST_LOG=debug)
     #[arg(short, long)]
     verbose: bool,
+    /// Start Stando with AI mode enabled
+    #[arg(short = 'a', long)]
+    ai_mode: bool,
 }
 
 fn main() -> Result<()> {
@@ -46,9 +49,10 @@ fn main() -> Result<()> {
             .application_id("com.stando.App")
             .build();
 
+        let ai_mode_enabled = args.ai_mode;
         application.connect_activate(move |app| {
             // Create app instance
-            let stando_app = match App::new(app.clone()) {
+            let stando_app = match App::new(app.clone(), ai_mode_enabled) {
                 Ok(app) => app,
                 Err(e) => {
                     eprintln!("Failed to create application: {}", e);

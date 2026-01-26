@@ -9,7 +9,7 @@ A next-gen selection based search system for Linux. Stando is a keyboard-oriente
 - **Global hotkeys**: Win+Space to invoke UI
 - **File search**: Search and open files on the host
 - **Application search**: Search and launch applications
-- **AI mode**: Toggle with <Control>i, reference files/apps with @ symbol
+- **AI mode**: Toggle with <Control>i, launch with `stando --ai-mode` (alias `-a`) to start with the AI indicator active, and reference files/apps with @ symbol
 - **OpenAI integration**: Uses OpenAI API for AI-powered assistance
 
 ## Requirements
@@ -80,7 +80,8 @@ hotkey_ai_toggle = "<Control>i"
 5. Press **Esc** to close Stando
 6. Press **<Control>i** to toggle AI mode
 7. In AI mode, use **@filename** or **@appname** to reference files/applications
-8. For debug logging, run `stando --verbose` or `RUST_LOG=debug stando`
+8. Run `stando --ai-mode` (or `stando -a`) to open directly in AI mode so the UI behaves as if the toggle was activated before the window appeared
+9. For debug logging, run `stando --verbose` or `RUST_LOG=debug stando`
 
 ## Development
 

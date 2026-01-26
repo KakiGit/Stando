@@ -30,7 +30,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(application: Application) -> Result<Self> {
+    pub fn new(application: Application, ai_mode_enabled: bool) -> Result<Self> {
         let log_guard = logging::function_guard("App::new");
         let result = (|| {
             // Load config
@@ -59,7 +59,8 @@ impl App {
                 config.floating_preference.clone(),
             )));
 
-            let ai_mode = Arc::new(RwLock::new(false));
+            let ai_mode = Arc::new(RwLock::new(ai_mode_enabled));
+            search_window.set_ai_mode(ai_mode_enabled);
 
             Ok(Self {
                 application,
