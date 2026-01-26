@@ -1,15 +1,17 @@
 use crate::logging;
 use crate::search::SearchResult;
 use adw::Application;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use gdk4::prelude::*;
 use gdk4::{Display, Monitor, Rectangle};
 use gio::prelude::ListModelExt;
 use glib::prelude::Cast;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box, Button, Entry, ListBox, ScrolledWindow};
+use std::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use xdg::BaseDirectories;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
@@ -79,8 +81,8 @@ impl SearchWindow {
 
         // Load CSS
         let provider = gtk4::CssProvider::new();
-        let css_data = include_str!("../assets/style.css");
-        provider.load_from_data(css_data);
+        let css_data = Self::load_css_data();
+        provider.load_from_data(&css_data);
         if let Some(display) = gdk4::Display::default() {
             gtk4::style_context_add_provider_for_display(
                 &display,
@@ -143,6 +145,38 @@ impl SearchWindow {
             )));
             self.entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
         }
+    }
+
+    fn load_css_data() -> String {
+        match Self::load_css_from_config() {
+            Ok(css) => css,
+            Err(err) => {
+                tracing::error!(
+                    "Unable to load style.css from config directory, falling back to built-in styles: {err}"
+                );
+                include_str!("../assets/style.css").to_string()
+            }
+        }
+    }
+
+    fn load_css_from_config() -> Result<String> {
+        let xdg_dirs =
+            BaseDirectories::with_prefix("stando").context("Failed to initialize XDG directories")?;
+        let style_path = xdg_dirs
+            .place_config_file("style.css")
+            .context("Failed to determine style.css path")?;
+
+        if let Some(parent) = style_path.parent() {
+            fs::create_dir_all(parent)
+                .context("Failed to create directories for style.css configuration")?;
+        }
+
+        if !style_path.exists() {
+            fs::write(&style_path, include_str!("../assets/style.css"))
+                .context("Failed to write default style.css to config directory")?;
+        }
+
+        fs::read_to_string(&style_path).context("Failed to read config style.css")
     }
 
     pub fn connect_ai_button_clicked<F: Fn() + 'static>(&self, callback: F) {
