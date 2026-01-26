@@ -71,6 +71,22 @@ hotkey_show = "Super+Space"
 hotkey_ai_toggle = "<Control>i"
 ```
 
+## Custom Styling
+
+Stando reads styles from `~/.config/stando/style.css`; if the file is missing it copies the bundled `assets/style.css` into the config directory so you can tweak it directly. Any changes you make are loaded the next time the app starts.
+
+### Available selectors
+
+- `.search-window` (floating window shell)
+- `.search-main` (main vertical layout)
+- `.search-bar` (search entry/AI button container)
+- `.search-entry` (text entry)
+- `button.search-ai-button`, `button.search-ai-button.ai-mode-active` (AI toggle button states)
+- `.search-results-scroll` (scroll container)
+- `.search-results-list` (list box)
+- `.search-result-row`, `.search-result-row:hover`, `.search-result-row:selected`
+- `.search-result-label` (result text typography)
+
 ## Usage
 
 1. Start Stando to open the search window immediately (the process runs only while that window is visible)

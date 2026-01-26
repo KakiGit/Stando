@@ -37,16 +37,19 @@ impl SearchWindow {
             .resizable(true)
             .decorated(false)
             .build();
+        window.add_css_class("search-window");
 
         // Center and size the window before showing it.
         Self::configure_window_geometry(&window);
 
         // Main container
         let main_box = Box::new(gtk4::Orientation::Vertical, 0);
+        main_box.add_css_class("search-main");
         window.set_child(Some(&main_box));
 
         // Search bar container (horizontal box for entry + button)
         let search_box = Box::new(gtk4::Orientation::Horizontal, 8);
+        search_box.add_css_class("search-bar");
         search_box.set_margin_start(16);
         search_box.set_margin_end(16);
         search_box.set_margin_top(16);
@@ -59,11 +62,12 @@ impl SearchWindow {
         entry.set_hexpand(true);
         entry.set_margin_start(0);
         entry.set_margin_end(0);
+        entry.set_css_classes(&["search-entry"]);
         search_box.append(&entry);
 
         // AI mode toggle button
         let ai_button = Button::new();
-        ai_button.set_css_classes(&["ai-mode-button"]);
+        ai_button.set_css_classes(&["ai-mode-button", "search-ai-button"]);
         ai_button.set_tooltip_text(Some(&format!("Toggle AI Mode ({})", ai_shortcut)));
         ai_button.set_label("AI");
         ai_button.set_valign(gtk4::Align::Center);
@@ -71,10 +75,12 @@ impl SearchWindow {
 
         // Results list
         let scrolled = ScrolledWindow::new();
+        scrolled.set_css_classes(&["search-results-scroll"]);
         scrolled.set_hexpand(true);
         scrolled.set_vexpand(true);
 
         let list_box = ListBox::new();
+        list_box.set_css_classes(&["search-results-list"]);
         list_box.set_selection_mode(gtk4::SelectionMode::Single);
         scrolled.set_child(Some(&list_box));
         main_box.append(&scrolled);
@@ -160,8 +166,8 @@ impl SearchWindow {
     }
 
     fn load_css_from_config() -> Result<String> {
-        let xdg_dirs =
-            BaseDirectories::with_prefix("stando").context("Failed to initialize XDG directories")?;
+        let xdg_dirs = BaseDirectories::with_prefix("stando")
+            .context("Failed to initialize XDG directories")?;
         let style_path = xdg_dirs
             .place_config_file("style.css")
             .context("Failed to determine style.css path")?;
@@ -215,6 +221,7 @@ impl SearchWindow {
         // Add new results
         for result in new_results.iter() {
             let row = gtk4::ListBoxRow::new();
+            row.set_css_classes(&["search-result-row"]);
             let display_text = match result {
                 crate::search::SearchResult::Text { content, name } => {
                     // For text results, show full content and let the label wrap.
@@ -233,6 +240,7 @@ impl SearchWindow {
             label.set_wrap(true);
             label.set_wrap_mode(gtk4::pango::WrapMode::Word);
             label.set_ellipsize(gtk4::pango::EllipsizeMode::None);
+            label.set_css_classes(&["search-result-label"]);
             row.set_child(Some(&label));
             row.set_selectable(true);
             self.list_box.append(&row);
