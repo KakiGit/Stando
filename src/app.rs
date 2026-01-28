@@ -1,12 +1,14 @@
 use crate::ai::AIService;
 use crate::config::Config;
 use crate::history::UsageHistory;
+use crate::history_panel::{ChatHistoryEntry, ChatRole, HistoryPanelState};
 use crate::logging;
 use crate::search::SearchEngine;
 use crate::ui::SearchWindow;
 use crate::window::FloatingWindowController;
 use adw::Application;
 use anyhow::{Context, Result};
+use chrono::Utc;
 use futures::channel::oneshot;
 use gdk4::Key;
 use gtk4::prelude::*;
@@ -15,6 +17,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 pub struct App {
     #[allow(dead_code)]
@@ -25,12 +28,17 @@ pub struct App {
     ai_service: Option<Arc<AIService>>,
     search_window: Rc<SearchWindow>,
     ai_mode: Arc<RwLock<bool>>,
+    history_panel_state: Arc<RwLock<HistoryPanelState>>,
     #[allow(dead_code)]
     floating_controller: Rc<RefCell<FloatingWindowController>>,
 }
 
 impl App {
-    pub fn new(application: Application, ai_mode_enabled: bool) -> Result<Self> {
+    pub fn new(
+        application: Application,
+        ai_mode_enabled: bool,
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
+    ) -> Result<Self> {
         let log_guard = logging::function_guard("App::new");
         let result = (|| {
             // Load config
@@ -50,8 +58,12 @@ impl App {
 
             // Create search window
             let search_window = Rc::new(
-                SearchWindow::new(&application, &config.hotkey_ai_toggle)
-                    .context("Failed to create search window")?,
+                SearchWindow::new(
+                    &application,
+                    &config.hotkey_ai_toggle,
+                    history_panel_state.clone(),
+                )
+                .context("Failed to create search window")?,
             );
 
             let floating_controller = Rc::new(RefCell::new(FloatingWindowController::new(
@@ -70,6 +82,7 @@ impl App {
                 ai_service,
                 search_window,
                 ai_mode,
+                history_panel_state,
                 floating_controller,
             })
         })();
@@ -95,6 +108,7 @@ impl App {
 
             // Set up UI callbacks
             self.setup_ui_callbacks()?;
+            self.hydrate_history_panel().await?;
 
             // Set up window-local shortcuts
             self.setup_window_shortcuts()?;
@@ -110,6 +124,28 @@ impl App {
             // Show the main window on start
             self.show_window();
 
+            Ok(())
+        }
+        .await;
+        if result.is_err() {
+            log_guard.mark_error();
+        }
+        result
+    }
+
+    async fn hydrate_history_panel(&self) -> Result<()> {
+        let log_guard = logging::function_guard("App::hydrate_history_panel");
+        let result = async {
+            let records = self.history.chat_entries().await;
+            let entries = records
+                .into_iter()
+                .map(ChatHistoryEntry::from)
+                .collect::<Vec<_>>();
+            tracing::info!("Loaded {} chat history entries", entries.len());
+            let mut state = self.history_panel_state.write().await;
+            state.set_entries(entries);
+            drop(state);
+            self.refresh_history_panel();
             Ok(())
         }
         .await;
@@ -170,6 +206,7 @@ impl App {
             let ai_service = self.ai_service.clone();
             let ai_mode = self.ai_mode.clone();
             let history = self.history.clone();
+            let history_panel_state = self.history_panel_state.clone();
 
             // Search on entry change
             let search_engine = self.search_engine.clone();
@@ -220,72 +257,108 @@ impl App {
             let ai_service_clone = ai_service.clone();
             let history_for_entry = history.clone();
             let application_for_entry = self.application.clone();
+            let history_panel_state_for_entry = history_panel_state.clone();
             self.search_window.connect_entry_activate(move || {
-            let search_window_clone = search_window_activate.clone();
-            let ai_mode = ai_mode_clone.clone();
-            let ai_service = ai_service_clone.clone();
-            let history = history_for_entry.clone();
-            let application = application_for_entry.clone();
-            glib::MainContext::default().spawn_local(async move {
-                // Check if AI mode is enabled
-                let is_ai_mode = *ai_mode.read().await;
+                let search_window_clone = search_window_activate.clone();
+                let ai_mode = ai_mode_clone.clone();
+                let ai_service = ai_service_clone.clone();
+                let history = history_for_entry.clone();
+                let application = application_for_entry.clone();
+                let history_panel_state = history_panel_state_for_entry.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    // Check if AI mode is enabled
+                    let is_ai_mode = *ai_mode.read().await;
 
-                if is_ai_mode {
-                    // In AI mode: send query to AI
-                    let query = search_window_clone.get_query();
-                    if query.is_empty() {
-                        return;
-                    }
-
-                    if let Some(ai_service) = ai_service {
-                        // Show a lightweight loading row while waiting for AI
-                        let loading_result = crate::search::SearchResult::Text {
-                            content: "Thinking...".to_string(),
-                            name: "AI".to_string(),
-                        };
-                        search_window_clone.update_results(vec![loading_result]).await;
-                        let (tx, rx) = oneshot::channel();
-                        let ai_service = ai_service.clone();
-                        let query_for_thread = query.clone();
-                        thread::spawn(move || {
-                            let result = ai_service.process_query_blocking(&query_for_thread);
-                            let _ = tx.send(result);
-                        });
-
-                        match rx.await {
-                            Ok(Ok(response)) => {
-                                // Display AI response as a text result
-                                let ai_result = crate::search::SearchResult::Text {
-                                    content: response.clone(),
-                                    name: format!("AI Response: {}", query),
-                                };
-                                search_window_clone.update_results(vec![ai_result]).await;
-                            }
-                            Ok(Err(e)) => {
-                                eprintln!("AI query failed: {}", e);
-                                // Show error as text result
-                                let error_result = crate::search::SearchResult::Text {
-                                    content: format!("Error: {}", e),
-                                    name: "AI Error".to_string(),
-                                };
-                                search_window_clone.update_results(vec![error_result]).await;
-                            }
-                            Err(_) => {
-                                let error_result = crate::search::SearchResult::Text {
-                                    content: "Error: AI request thread terminated.".to_string(),
-                                    name: "AI Error".to_string(),
-                                };
-                                search_window_clone.update_results(vec![error_result]).await;
-                            }
+                    if is_ai_mode {
+                        // In AI mode: send query to AI
+                        let query = search_window_clone.get_query();
+                        if query.is_empty() {
+                            return;
                         }
-                    } else {
-                        // AI service not available
-                        let error_result = crate::search::SearchResult::Text {
-                            content: "AI service not configured. Please set OPENAI_API_KEY in your config.".to_string(),
-                            name: "AI Not Available".to_string(),
-                        };
-                        search_window_clone.update_results(vec![error_result]).await;
-                    }
+
+                        let user_entry = Self::create_history_entry(
+                            ChatRole::User,
+                            &query,
+                            Some("prompt".to_string()),
+                        );
+                        Self::record_history_entry(
+                            history_panel_state.clone(),
+                            history.clone(),
+                            user_entry,
+                        );
+                        Self::refresh_history_panel_with_state(
+                            search_window_clone.clone(),
+                            history_panel_state.clone(),
+                        );
+
+                        if let Some(ai_service) = ai_service {
+                            let (tx, rx) = oneshot::channel();
+                            let ai_service = ai_service.clone();
+                            let query_for_thread = query.clone();
+                            thread::spawn(move || {
+                                let result = ai_service.process_query_blocking(&query_for_thread);
+                                let _ = tx.send(result);
+                            });
+
+                            match rx.await {
+                                Ok(Ok(response)) => {
+                                    let assistant_entry = Self::create_history_entry(
+                                        ChatRole::Assistant,
+                                        &response,
+                                        Some("response".to_string()),
+                                    );
+                                    Self::record_history_entry(
+                                        history_panel_state.clone(),
+                                        history.clone(),
+                                        assistant_entry,
+                                    );
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::error!("AI query failed: {}", e);
+                                    let assistant_entry = Self::create_history_entry(
+                                        ChatRole::Assistant,
+                                        &format!("Error: {}", e),
+                                        Some("response".to_string()),
+                                    );
+                                    Self::record_history_entry(
+                                        history_panel_state.clone(),
+                                        history.clone(),
+                                        assistant_entry,
+                                    );
+                                }
+                                Err(_) => {
+                                    let assistant_entry = Self::create_history_entry(
+                                        ChatRole::Assistant,
+                                        "Error: AI request thread terminated.",
+                                        Some("response".to_string()),
+                                    );
+                                    Self::record_history_entry(
+                                        history_panel_state.clone(),
+                                        history.clone(),
+                                        assistant_entry,
+                                    );
+                                }
+                            }
+                            Self::refresh_history_panel_with_state(
+                                search_window_clone.clone(),
+                                history_panel_state.clone(),
+                            );
+                        } else {
+                            let assistant_entry = Self::create_history_entry(
+                                ChatRole::Assistant,
+                                "AI service not configured. Please set OPENAI_API_KEY in your config.",
+                                Some("response".to_string()),
+                            );
+                            Self::record_history_entry(
+                                history_panel_state.clone(),
+                                history.clone(),
+                                assistant_entry,
+                            );
+                            Self::refresh_history_panel_with_state(
+                                search_window_clone.clone(),
+                                history_panel_state.clone(),
+                            );
+                        }
                     } else {
                         // Normal mode: open selected result
                         if let Some(result) = search_window_clone.get_selected_result().await {
@@ -295,8 +368,8 @@ impl App {
                             application.quit();
                         }
                     }
+                });
             });
-        });
 
             // Handle list activation
             let search_window_list = self.search_window.clone();
@@ -351,6 +424,7 @@ impl App {
                     search_window_ai.clone(),
                     search_engine.clone(),
                     config.clone(),
+                    history_panel_state.clone(),
                 );
             });
 
@@ -371,12 +445,14 @@ impl App {
             let search_window = self.search_window.clone();
             let search_engine = self.search_engine.clone();
             let config = self.config.clone();
+            let history_panel_state = self.history_panel_state.clone();
             action.connect_activate(move |_, _| {
                 Self::spawn_toggle_ai(
                     ai_mode.clone(),
                     search_window.clone(),
                     search_engine.clone(),
                     config.clone(),
+                    history_panel_state.clone(),
                 );
             });
             window.add_action(&action);
@@ -440,9 +516,17 @@ impl App {
         search_window: Rc<SearchWindow>,
         search_engine: Arc<SearchEngine>,
         config: Config,
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
     ) {
         glib::MainContext::default().spawn_local(async move {
-            Self::toggle_ai_mode(ai_mode, search_window, search_engine, config).await;
+            Self::toggle_ai_mode(
+                ai_mode,
+                search_window,
+                search_engine,
+                config,
+                history_panel_state,
+            )
+            .await;
         });
     }
 
@@ -451,6 +535,7 @@ impl App {
         search_window: Rc<SearchWindow>,
         search_engine: Arc<SearchEngine>,
         config: Config,
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
     ) {
         let mut mode = ai_mode.write().await;
         *mode = !*mode;
@@ -458,6 +543,14 @@ impl App {
         drop(mode);
         // Update UI to show AI mode status
         search_window.set_ai_mode(enabled);
+        if enabled {
+            let mut state = history_panel_state.write().await;
+            state.ensure_latest_selected();
+        }
+        Self::refresh_history_panel_with_state(search_window.clone(), history_panel_state.clone());
+        if enabled {
+            search_window.focus_history_list();
+        }
         Self::reset_content(search_window, search_engine, config, ai_mode.clone()).await;
     }
 
@@ -479,6 +572,23 @@ impl App {
         glib::MainContext::default().spawn_local(async move {
             let enabled = *ai_mode.read().await;
             search_window.set_ai_mode(enabled);
+        });
+    }
+
+    fn refresh_history_panel(&self) {
+        Self::refresh_history_panel_with_state(
+            self.search_window.clone(),
+            self.history_panel_state.clone(),
+        );
+    }
+
+    fn refresh_history_panel_with_state(
+        search_window: Rc<SearchWindow>,
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
+    ) {
+        glib::MainContext::default().spawn_local(async move {
+            let guard = history_panel_state.read().await;
+            search_window.apply_history_state(&guard);
         });
     }
 
@@ -536,6 +646,52 @@ impl App {
             glib::MainContext::default().spawn_local(async move {
                 history.record_launch(id).await;
             });
+        }
+    }
+
+    async fn append_history_entry(&self, entry: ChatHistoryEntry) {
+        Self::record_history_entry(
+            self.history_panel_state.clone(),
+            self.history.clone(),
+            entry,
+        );
+        self.refresh_history_panel();
+    }
+
+    fn record_history_entry(
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
+        history: Arc<UsageHistory>,
+        entry: ChatHistoryEntry,
+    ) {
+        AIService::notify_history_state(history_panel_state, history, entry);
+    }
+
+    fn create_history_entry(
+        role: ChatRole,
+        content: &str,
+        source: Option<String>,
+    ) -> ChatHistoryEntry {
+        ChatHistoryEntry {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            role,
+            summary: Self::summarize_content(content),
+            content: content.to_string(),
+            source,
+        }
+    }
+
+    fn summarize_content(content: &str) -> String {
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return "[no content]".to_string();
+        }
+        let first_line = trimmed.lines().next().unwrap_or("").trim();
+        let summary: String = first_line.chars().take(80).collect();
+        if summary.is_empty() {
+            "[no preview]".to_string()
+        } else {
+            summary
         }
     }
 }

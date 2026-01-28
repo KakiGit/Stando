@@ -3,17 +3,21 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use gtk4::prelude::*;
 use std::rc::Rc;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 mod ai;
 mod app;
 mod config;
 mod history;
+mod history_panel;
 mod logging;
 mod search;
 mod ui;
 mod window;
 
 use app::App;
+use history_panel::HistoryPanelState;
 
 #[derive(Parser, Debug)]
 #[command(name = "stando")]
@@ -52,7 +56,8 @@ fn main() -> Result<()> {
         let ai_mode_enabled = args.ai_mode;
         application.connect_activate(move |app| {
             // Create app instance
-            let stando_app = match App::new(app.clone(), ai_mode_enabled) {
+            let history_state = Arc::new(RwLock::new(HistoryPanelState::default()));
+            let stando_app = match App::new(app.clone(), ai_mode_enabled, history_state.clone()) {
                 Ok(app) => app,
                 Err(e) => {
                     eprintln!("Failed to create application: {}", e);

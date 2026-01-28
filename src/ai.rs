@@ -1,9 +1,13 @@
+use crate::history::UsageHistory;
+use crate::history_panel::{ChatHistoryEntry, ChatHistoryRecord, HistoryPanelState};
 use crate::logging;
 use crate::search::{SearchEngine, SearchResult};
 use anyhow::{Context, Result};
+use glib::MainContext;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Message {
@@ -162,5 +166,19 @@ impl AIService {
             log_guard.mark_error();
         }
         result
+    }
+
+    pub fn notify_history_state(
+        history_state: Arc<RwLock<HistoryPanelState>>,
+        usage_history: Arc<UsageHistory>,
+        entry: ChatHistoryEntry,
+    ) {
+        MainContext::default().spawn_local(async move {
+            let mut guard = history_state.write().await;
+            guard.append_entry(entry.clone());
+            drop(guard);
+            let record = ChatHistoryRecord::from(entry);
+            usage_history.record_chat_entry(record).await;
+        });
     }
 }

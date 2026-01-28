@@ -1,13 +1,18 @@
+use crate::history_panel::{ChatHistoryEntry, HistoryPanelState, DEFAULT_EMPTY_MESSAGE};
 use crate::logging;
 use crate::search::SearchResult;
 use adw::Application;
 use anyhow::{Context, Result};
+use chrono::Local;
 use gdk4::prelude::*;
-use gdk4::{Display, Monitor, Rectangle};
+use gdk4::{Display, Key, Monitor, Rectangle};
 use gio::prelude::ListModelExt;
-use glib::prelude::Cast;
+use glib::{prelude::Cast, Propagation};
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, Box, Button, Entry, ListBox, ScrolledWindow};
+use gtk4::{
+    ApplicationWindow, Box, Button, Entry, Label, ListBox, ListBoxRow, Paned, ScrolledWindow,
+    Stack, TextView,
+};
 use std::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -23,13 +28,22 @@ pub struct SearchWindow {
     entry: Entry,
     ai_button: Button,
     ai_shortcut: String,
-    list_box: ListBox,
+    content_stack: Stack,
+    results_list_box: ListBox,
+    history_list_stack: Stack,
+    history_list_box: ListBox,
+    history_detail: TextView,
+    history_empty_label: Label,
     results: Arc<RwLock<Vec<SearchResult>>>,
     selected_index: Arc<RwLock<usize>>,
 }
 
 impl SearchWindow {
-    pub fn new(app: &Application, ai_shortcut: &str) -> Result<Self> {
+    pub fn new(
+        app: &Application,
+        ai_shortcut: &str,
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
+    ) -> Result<Self> {
         let log_guard = logging::function_guard("SearchWindow::new");
         let window = ApplicationWindow::builder()
             .application(app)
@@ -41,6 +55,7 @@ impl SearchWindow {
 
         // Center and size the window before showing it.
         Self::configure_window_geometry(&window);
+        let (default_window_width, _) = Self::calculate_window_dimensions();
 
         // Main container
         let main_box = Box::new(gtk4::Orientation::Vertical, 0);
@@ -73,17 +88,74 @@ impl SearchWindow {
         ai_button.set_valign(gtk4::Align::Center);
         search_box.append(&ai_button);
 
-        // Results list
-        let scrolled = ScrolledWindow::new();
-        scrolled.set_css_classes(&["search-results-scroll"]);
-        scrolled.set_hexpand(true);
-        scrolled.set_vexpand(true);
+        // Content stack (switch between search results and history panel)
+        let content_stack = Stack::new();
+        content_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+        content_stack.set_transition_duration(200);
+        content_stack.add_css_class("search-results-stack");
+        content_stack.set_vexpand(true);
+        content_stack.set_hexpand(true);
+        main_box.append(&content_stack);
 
-        let list_box = ListBox::new();
-        list_box.set_css_classes(&["search-results-list"]);
-        list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        scrolled.set_child(Some(&list_box));
-        main_box.append(&scrolled);
+        // Search results view
+        let results_scrolled = ScrolledWindow::new();
+        results_scrolled.set_css_classes(&["search-results-scroll"]);
+        results_scrolled.set_hexpand(true);
+        results_scrolled.set_vexpand(true);
+
+        let results_list_box = ListBox::new();
+        results_list_box.set_css_classes(&["search-results-list"]);
+        results_list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        results_scrolled.set_child(Some(&results_list_box));
+        content_stack.add_named(&results_scrolled, Some("search-results"));
+
+        // History panel view
+        let history_paned = Paned::new(gtk4::Orientation::Horizontal);
+        history_paned.set_css_classes(&["history-pane"]);
+        let history_detail_position = ((default_window_width * 3) / 4).max(1);
+        history_paned.set_position(history_detail_position);
+
+        let history_detail = TextView::new();
+        history_detail.set_editable(false);
+        history_detail.set_cursor_visible(false);
+        history_detail.set_wrap_mode(gtk4::WrapMode::WordChar);
+        history_detail.set_margin_start(12);
+        history_detail.set_margin_end(12);
+        history_detail.set_margin_top(12);
+        history_detail.set_margin_bottom(12);
+        history_detail.set_css_classes(&["history-detail"]);
+
+        let history_list_stack = Stack::new();
+        history_list_stack.set_vexpand(true);
+        history_list_stack.set_hexpand(true);
+        history_list_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+
+        let history_list_scrolled = ScrolledWindow::new();
+        history_list_scrolled.set_hexpand(true);
+        history_list_scrolled.set_vexpand(true);
+        history_list_scrolled.set_css_classes(&["history-list-scroll"]);
+
+        let history_list_box = ListBox::new();
+        history_list_box.set_css_classes(&["history-results-list"]);
+        history_list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        history_list_box.set_focusable(false);
+        history_list_scrolled.set_child(Some(&history_list_box));
+        history_list_stack.add_named(&history_list_scrolled, Some("history-list"));
+
+        let history_empty_label = Label::new(Some(DEFAULT_EMPTY_MESSAGE));
+        history_empty_label.set_wrap(true);
+        history_empty_label.set_wrap(true);
+        history_empty_label.set_margin_start(12);
+        history_empty_label.set_margin_end(12);
+        history_empty_label.set_margin_top(16);
+        history_empty_label.set_margin_bottom(16);
+        history_empty_label.set_css_classes(&["history-empty-label"]);
+        history_list_stack.add_named(&history_empty_label, Some("history-empty"));
+
+        history_paned.set_start_child(Some(&history_detail));
+        history_paned.set_end_child(Some(&history_list_stack));
+        content_stack.add_named(&history_paned, Some("history-panel"));
+        content_stack.set_visible_child_name("search-results");
 
         // Load CSS
         let provider = gtk4::CssProvider::new();
@@ -97,6 +169,78 @@ impl SearchWindow {
             );
         }
 
+        // History interaction helpers
+        let history_selection_state = history_panel_state.clone();
+        let history_list_box_for_selection = history_list_box.clone();
+        let history_list_stack_for_selection = history_list_stack.clone();
+        let history_empty_label_for_selection = history_empty_label.clone();
+        let history_detail_for_selection = history_detail.clone();
+        let history_entry_for_focus = entry.clone();
+        history_list_box.connect_row_selected(move |_, row| {
+            let entry_index = row.and_then(|row| {
+                let index = row.index();
+                if index < 0 {
+                    None
+                } else {
+                    Some(index as usize)
+                }
+            });
+            let entry_index = match entry_index {
+                Some(index) => index,
+                None => return,
+            };
+            let history_state = history_selection_state.clone();
+            let list_box = history_list_box_for_selection.clone();
+            let stack = history_list_stack_for_selection.clone();
+            let placeholder = history_empty_label_for_selection.clone();
+            let detail = history_detail_for_selection.clone();
+            let entry_focus = history_entry_for_focus.clone();
+            glib::MainContext::default().spawn_local(async move {
+                let mut guard = history_state.write().await;
+                if let Some(entry) = guard.entries().get(entry_index) {
+                    let entry_id = entry.id;
+                    if guard.selected_entry_id() == Some(entry_id) {
+                        return;
+                    }
+                    guard.select_entry(Some(entry_id));
+                    tracing::debug!(selected_entry = ?Some(entry_id), "History row selected");
+                    drop(guard);
+                    let guard = history_state.read().await;
+                    sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
+                    entry_focus.grab_focus();
+                }
+            });
+        });
+
+        let history_state_for_entry_keys = history_panel_state.clone();
+        let history_list_box_for_entry_keys = history_list_box.clone();
+        let history_list_stack_for_entry_keys = history_list_stack.clone();
+        let history_empty_label_for_entry_keys = history_empty_label.clone();
+        let history_detail_for_entry_keys = history_detail.clone();
+        let content_stack_for_entry_keys = content_stack.clone();
+        let navigation_controller = gtk4::EventControllerKey::new();
+        let entry_for_navigation = entry.clone();
+        navigation_controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
+            if !is_history_panel_visible(&content_stack_for_entry_keys) {
+                return Propagation::Proceed;
+            }
+            let handled = schedule_history_navigation(
+                keyval,
+                history_state_for_entry_keys.clone(),
+                history_list_box_for_entry_keys.clone(),
+                history_list_stack_for_entry_keys.clone(),
+                history_empty_label_for_entry_keys.clone(),
+                history_detail_for_entry_keys.clone(),
+            );
+            if handled {
+                entry_for_navigation.grab_focus();
+                Propagation::Stop
+            } else {
+                Propagation::Proceed
+            }
+        });
+        entry.add_controller(navigation_controller.clone());
+
         // Initially hidden
         // window.set_visible(false);
 
@@ -108,7 +252,12 @@ impl SearchWindow {
             entry,
             ai_button,
             ai_shortcut: ai_shortcut.to_string(),
-            list_box,
+            content_stack,
+            results_list_box,
+            history_list_stack,
+            history_list_box,
+            history_detail,
+            history_empty_label,
             results,
             selected_index,
         });
@@ -143,6 +292,7 @@ impl SearchWindow {
                 self.ai_shortcut
             )));
             self.entry.set_placeholder_text(Some(AI_PLACEHOLDER));
+            self.content_stack.set_visible_child_name("history-panel");
         } else {
             self.ai_button.remove_css_class("ai-mode-active");
             self.ai_button.set_tooltip_text(Some(&format!(
@@ -150,6 +300,7 @@ impl SearchWindow {
                 self.ai_shortcut
             )));
             self.entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
+            self.content_stack.set_visible_child_name("search-results");
         }
     }
 
@@ -209,13 +360,29 @@ impl SearchWindow {
         self.window.is_visible()
     }
 
+    pub fn apply_history_state(&self, state: &HistoryPanelState) {
+        let _log_guard = logging::function_guard("SearchWindow::apply_history_state");
+        sync_history_widgets(
+            &self.history_list_box,
+            &self.history_list_stack,
+            &self.history_empty_label,
+            &self.history_detail,
+            state,
+        );
+    }
+
+    pub fn focus_history_list(&self) {
+        let _log_guard = logging::function_guard("SearchWindow::focus_history_list");
+        self.history_list_box.grab_focus();
+    }
+
     pub async fn update_results(&self, new_results: Vec<SearchResult>) {
         let _log_guard = logging::function_guard("SearchWindow::update_results");
         *self.results.write().await = new_results.clone();
 
         // Clear existing rows
-        while let Some(row) = self.list_box.row_at_index(0) {
-            self.list_box.remove(&row);
+        while let Some(row) = self.results_list_box.row_at_index(0) {
+            self.results_list_box.remove(&row);
         }
 
         // Add new results
@@ -243,12 +410,12 @@ impl SearchWindow {
             label.set_css_classes(&["search-result-label"]);
             row.set_child(Some(&label));
             row.set_selectable(true);
-            self.list_box.append(&row);
+            self.results_list_box.append(&row);
         }
 
         // Select first item
-        if let Some(first_row) = self.list_box.row_at_index(0) {
-            self.list_box.select_row(Some(&first_row));
+        if let Some(first_row) = self.results_list_box.row_at_index(0) {
+            self.results_list_box.select_row(Some(&first_row));
             *self.selected_index.write().await = 0;
         }
     }
@@ -267,7 +434,7 @@ impl SearchWindow {
 
     pub fn connect_activate<F: Fn() + 'static>(&self, callback: F) {
         let _log_guard = logging::function_guard("SearchWindow::connect_activate");
-        self.list_box.connect_row_activated(move |_, _| {
+        self.results_list_box.connect_row_activated(move |_, _| {
             callback();
         });
     }
@@ -327,8 +494,8 @@ impl SearchWindow {
         let results_len = self.results.blocking_read().len();
         if current < results_len.saturating_sub(1) {
             *self.selected_index.blocking_write() = current + 1;
-            if let Some(row) = self.list_box.row_at_index((current + 1) as i32) {
-                self.list_box.select_row(Some(&row));
+            if let Some(row) = self.results_list_box.row_at_index((current + 1) as i32) {
+                self.results_list_box.select_row(Some(&row));
             }
         }
     }
@@ -339,8 +506,8 @@ impl SearchWindow {
         let current = *self.selected_index.blocking_read();
         if current > 0 {
             *self.selected_index.blocking_write() = current - 1;
-            if let Some(row) = self.list_box.row_at_index((current - 1) as i32) {
-                self.list_box.select_row(Some(&row));
+            if let Some(row) = self.results_list_box.row_at_index((current - 1) as i32) {
+                self.results_list_box.select_row(Some(&row));
             }
         }
     }
@@ -387,4 +554,116 @@ impl SearchWindow {
         let monitor = monitor_object.downcast::<Monitor>().ok()?;
         Some(monitor.geometry())
     }
+}
+
+fn sync_history_widgets(
+    list_box: &ListBox,
+    stack: &Stack,
+    placeholder: &Label,
+    detail: &TextView,
+    state: &HistoryPanelState,
+) {
+    while let Some(row) = list_box.row_at_index(0) {
+        list_box.remove(&row);
+    }
+
+    if state.is_empty() {
+        stack.set_visible_child_name("history-empty");
+        let message = state.empty_state_message();
+        placeholder.set_text(message);
+        let buffer = detail.buffer();
+        buffer.set_text(message);
+        return;
+    }
+
+    stack.set_visible_child_name("history-list");
+    for entry in state.entries() {
+        let row = build_history_row(entry);
+        list_box.append(&row);
+    }
+
+    if let Some(index) = state.selected_index() {
+        if let Some(row) = list_box.row_at_index(index as i32) {
+            list_box.select_row(Some(&row));
+            if let Some(entry) = state.entries().get(index) {
+                let buffer = detail.buffer();
+                buffer.set_text(&entry.content);
+            }
+        }
+    } else {
+        list_box.unselect_all();
+        let buffer = detail.buffer();
+        buffer.set_text(state.empty_state_message());
+    }
+}
+
+fn build_history_row(entry: &ChatHistoryEntry) -> ListBoxRow {
+    let row = ListBoxRow::new();
+    row.set_css_classes(&["history-entry-row"]);
+    let timestamp = entry
+        .timestamp
+        .with_timezone(&Local)
+        .format("%H:%M:%S")
+        .to_string();
+    let container = Box::new(gtk4::Orientation::Vertical, 4);
+    container.set_margin_top(4);
+    container.set_margin_bottom(4);
+    container.set_margin_start(6);
+    container.set_margin_end(6);
+
+    let header = Label::new(Some(&format!(
+        "{} • {} • {}",
+        timestamp,
+        entry.role.label(),
+        entry.summary
+    )));
+    header.set_xalign(0.0);
+    header.set_wrap(true);
+    header.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    header.set_css_classes(&["history-entry-header"]);
+    container.append(&header);
+
+    let content_label = Label::new(Some(&entry.content));
+    content_label.set_xalign(0.0);
+    content_label.set_wrap(true);
+    content_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    content_label.set_css_classes(&["history-entry-content"]);
+    container.append(&content_label);
+
+    row.set_child(Some(&container));
+    row.set_selectable(true);
+    row
+}
+
+fn schedule_history_navigation(
+    keyval: Key,
+    history_state: Arc<RwLock<HistoryPanelState>>,
+    list_box: ListBox,
+    stack: Stack,
+    placeholder: Label,
+    detail: TextView,
+) -> bool {
+    let handled = matches!(keyval, Key::Up | Key::Down | Key::KP_Up | Key::KP_Down);
+    if !handled {
+        return false;
+    }
+
+    let navigation_key = keyval;
+    glib::MainContext::default().spawn_local(async move {
+        let mut guard = history_state.write().await;
+        match navigation_key {
+            Key::Up | Key::KP_Up => guard.move_selection_up(),
+            Key::Down | Key::KP_Down => guard.move_selection_down(),
+            _ => {}
+        }
+        drop(guard);
+        let guard = history_state.read().await;
+        sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
+    });
+
+    true
+}
+
+fn is_history_panel_visible(stack: &Stack) -> bool {
+    stack.visible_child_name().as_deref() == Some("history-panel")
 }

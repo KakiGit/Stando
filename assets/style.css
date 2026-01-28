@@ -95,6 +95,50 @@ button.search-ai-button.ai-mode-active:hover {
     font-size: 14px;
 }
 
+.history-pane {
+    background-color: rgba(20, 20, 20, 0.7);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-detail {
+    background-color: rgba(30, 30, 30, 0.85);
+    color: #f0f0f0;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    min-height: 120px;
+}
+
+.history-results-list {
+    background: transparent;
+}
+
+.history-entry-row {
+    background-color: rgba(60, 60, 60, 0.5);
+    border-radius: 8px;
+    margin: 4px 8px;
+    padding: 6px 10px;
+    transition: background-color 0.2s ease;
+}
+
+.history-entry-row:selected {
+    background-color: rgba(100, 150, 255, 0.3);
+}
+
+.history-entry-header {
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.history-entry-content {
+    color: #f7f7f7;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
 @media (prefers-color-scheme: light) {
     .search-window {
         background-color: rgba(255, 255, 255, 0.95);
@@ -143,5 +187,32 @@ button.search-ai-button.ai-mode-active:hover {
 
     .search-result-label {
         color: #000000;
+    }
+
+    .history-pane {
+        background-color: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .history-detail {
+        background-color: rgba(248, 248, 248, 0.9);
+        color: #111111;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .history-entry-row {
+        background-color: rgba(230, 230, 230, 0.8);
+    }
+
+    .history-entry-row:selected {
+        background-color: rgba(100, 150, 255, 0.25);
+    }
+
+    .history-entry-header {
+        color: #222222;
+    }
+
+    .history-entry-content {
+        color: #111111;
     }
 }

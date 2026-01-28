@@ -11,3 +11,5 @@ Thumbs.db
 debug/
 release/
 *.rlib
+*.tmp
+*.swp

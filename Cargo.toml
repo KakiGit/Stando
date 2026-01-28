@@ -58,5 +58,8 @@ futures = "0.3"
 # Open files/URLs
 open = "5.0"
 
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+
 [build-dependencies]
 pkg-config = "0.3"
