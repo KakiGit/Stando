@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: Stando AI Mode Chat History API (internal)
+  version: 1.0.0
+  description: API surface that backs the history panel's grouped chat view and timeline rendering.
+paths:
+  /api/history/chats:
+    get:
+      summary: List grouped chats
+      description: Returns one entry per chat hash (or the "recent-chat" fallback) with metadata needed for the sidebar list.
+      responses:
+        '200':
+          description: Chat summaries ordered by last timestamp descending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSummaryList'
+  /api/history/chats/{chatHash}:
+    get:
+      summary: Chat timeline
+      description: Returns every round belonging to the named chat hash (or the fallback identifier) in chronological order.
+      parameters:
+        - name: chatHash
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Chat hash or the literal "recent-chat" fallback for hash-less rounds.
+      responses:
+        '200':
+          description: Chronological conversation rounds for the selected chat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatTimeline'
+components:
+  schemas:
+    ChatSummary:
+      type: object
+      properties:
+        chatHash:
+          type: string
+          description: Unique identifier (actual hash or "recent-chat").
+        displayLabel:
+          type: string
+          description: Human-friendly metadata (last actor + timestamp).
+        lastActor:
+          type: string
+          description: Either "User" or "Assistant".
+        lastTimestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent round in the chat.
+        roundCount:
+          type: integer
+          description: Number of rounds grouped in this chat.
+      required:
+        - chatHash
+        - displayLabel
+        - lastActor
+        - lastTimestamp
+        - roundCount
+    ChatSummaryList:
+      type: array
+      description: Ordered list for the GTK `ListBox`.
+      items:
+        $ref: '#/components/schemas/ChatSummary'
+    ConversationRound:
+      type: object
+      properties:
+        roundId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [User, Assistant]
+        timestamp:
+          type: string
+          format: date-time
+        content:
+          type: string
+        source:
+          type: string
+          nullable: true
+      required:
+        - roundId
+        - role
+        - timestamp
+        - content
+    ChatTimeline:
+      type: object
+      properties:
+        chatHash:
+          type: string
+        rounds:
+          type: array
+          description: Chronologically ordered rounds (earliest first).
+          items:
+            $ref: '#/components/schemas/ConversationRound'
+      required:
+        - chatHash
+        - rounds

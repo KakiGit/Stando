@@ -1,7 +1,8 @@
 use crate::ai::AIService;
 use crate::config::Config;
 use crate::history::UsageHistory;
-use crate::history_panel::{ChatHistoryEntry, ChatRole, HistoryPanelState};
+use crate::history::{ChatHistoryRecord, ChatRole};
+use crate::history_panel::HistoryPanelState;
 use crate::logging;
 use crate::search::SearchEngine;
 use crate::ui::SearchWindow;
@@ -137,13 +138,9 @@ impl App {
         let log_guard = logging::function_guard("App::hydrate_history_panel");
         let result = async {
             let records = self.history.chat_entries().await;
-            let entries = records
-                .into_iter()
-                .map(ChatHistoryEntry::from)
-                .collect::<Vec<_>>();
-            tracing::info!("Loaded {} chat history entries", entries.len());
+            tracing::info!("Loaded {} chat history records", records.len());
             let mut state = self.history_panel_state.write().await;
-            state.set_entries(entries);
+            state.update_from_records(records);
             drop(state);
             self.refresh_history_panel();
             Ok(())
@@ -272,14 +269,29 @@ impl App {
                     if is_ai_mode {
                         // In AI mode: send query to AI
                         let query = search_window_clone.get_query();
-                        if query.is_empty() {
-                            return;
-                        }
+                        let normalized_query = match Self::normalized_ai_query(&query) {
+                            Some(value) => value,
+                            None => return,
+                        };
 
-                        let user_entry = Self::create_history_entry(
+                        let chat_id =
+                            match Self::selected_history_chat_id(history_panel_state.clone()).await {
+                                Some(id) => id,
+                                None => {
+                                    search_window_clone
+                                        .show_ai_error_notification("No chat selected");
+                                    tracing::warn!(
+                                        "AI append blocked: no chat selected while in AI mode"
+                                    );
+                                    return;
+                                }
+                            };
+
+                        let user_entry = Self::create_history_record(
                             ChatRole::User,
-                            &query,
+                            &normalized_query,
                             Some("prompt".to_string()),
+                            Some(chat_id.clone()),
                         );
                         Self::record_history_entry(
                             history_panel_state.clone(),
@@ -294,7 +306,7 @@ impl App {
                         if let Some(ai_service) = ai_service {
                             let (tx, rx) = oneshot::channel();
                             let ai_service = ai_service.clone();
-                            let query_for_thread = query.clone();
+                            let query_for_thread = normalized_query.clone();
                             thread::spawn(move || {
                                 let result = ai_service.process_query_blocking(&query_for_thread);
                                 let _ = tx.send(result);
@@ -302,10 +314,11 @@ impl App {
 
                             match rx.await {
                                 Ok(Ok(response)) => {
-                                    let assistant_entry = Self::create_history_entry(
+                                    let assistant_entry = Self::create_history_record(
                                         ChatRole::Assistant,
                                         &response,
                                         Some("response".to_string()),
+                                        Some(chat_id.clone()),
                                     );
                                     Self::record_history_entry(
                                         history_panel_state.clone(),
@@ -315,10 +328,11 @@ impl App {
                                 }
                                 Ok(Err(e)) => {
                                     tracing::error!("AI query failed: {}", e);
-                                    let assistant_entry = Self::create_history_entry(
+                                    let assistant_entry = Self::create_history_record(
                                         ChatRole::Assistant,
                                         &format!("Error: {}", e),
                                         Some("response".to_string()),
+                                        Some(chat_id.clone()),
                                     );
                                     Self::record_history_entry(
                                         history_panel_state.clone(),
@@ -327,10 +341,11 @@ impl App {
                                     );
                                 }
                                 Err(_) => {
-                                    let assistant_entry = Self::create_history_entry(
+                                    let assistant_entry = Self::create_history_record(
                                         ChatRole::Assistant,
                                         "Error: AI request thread terminated.",
                                         Some("response".to_string()),
+                                        Some(chat_id.clone()),
                                     );
                                     Self::record_history_entry(
                                         history_panel_state.clone(),
@@ -344,10 +359,11 @@ impl App {
                                 history_panel_state.clone(),
                             );
                         } else {
-                            let assistant_entry = Self::create_history_entry(
+                            let assistant_entry = Self::create_history_record(
                                 ChatRole::Assistant,
                                 "AI service not configured. Please set OPENAI_API_KEY in your config.",
                                 Some("response".to_string()),
+                                Some(chat_id.clone()),
                             );
                             Self::record_history_entry(
                                 history_panel_state.clone(),
@@ -649,7 +665,7 @@ impl App {
         }
     }
 
-    async fn append_history_entry(&self, entry: ChatHistoryEntry) {
+    async fn append_history_entry(&self, entry: ChatHistoryRecord) {
         Self::record_history_entry(
             self.history_panel_state.clone(),
             self.history.clone(),
@@ -661,23 +677,50 @@ impl App {
     fn record_history_entry(
         history_panel_state: Arc<RwLock<HistoryPanelState>>,
         history: Arc<UsageHistory>,
-        entry: ChatHistoryEntry,
+        entry: ChatHistoryRecord,
     ) {
         AIService::notify_history_state(history_panel_state, history, entry);
     }
 
-    fn create_history_entry(
+    async fn selected_history_chat_id(
+        history_panel_state: Arc<RwLock<HistoryPanelState>>,
+    ) -> Option<String> {
+        let guard = history_panel_state.read().await;
+        if guard.is_new_chat_selected() {
+            return Some(Uuid::new_v4().to_string());
+        }
+        if let Some(id) = guard.selected_chat_id() {
+            Some(id.to_string())
+        } else if guard.is_empty() {
+            Some(Uuid::new_v4().to_string())
+        } else {
+            None
+        }
+    }
+
+    fn normalized_ai_query(query: &str) -> Option<String> {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+
+    fn create_history_record(
         role: ChatRole,
         content: &str,
         source: Option<String>,
-    ) -> ChatHistoryEntry {
-        ChatHistoryEntry {
+        chat_hash: Option<String>,
+    ) -> ChatHistoryRecord {
+        ChatHistoryRecord {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
             role,
             summary: Self::summarize_content(content),
             content: content.to_string(),
             source,
+            chat_hash,
         }
     }
 
@@ -693,5 +736,73 @@ impl App {
         } else {
             summary
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::App;
+    use crate::history::{ChatHistoryRecord, ChatRole};
+    use crate::history_panel::HistoryPanelState;
+    use chrono::Utc;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    use uuid::Uuid;
+
+    #[test]
+    fn normalized_ai_query_trims_and_returns_text() {
+        let normalized = App::normalized_ai_query("  ask the ai to fetch  ");
+        assert_eq!(normalized.as_deref(), Some("ask the ai to fetch"));
+    }
+
+    #[test]
+    fn normalized_ai_query_ignores_empty_or_whitespace() {
+        assert!(App::normalized_ai_query("").is_none());
+        assert!(App::normalized_ai_query("    ").is_none());
+        assert!(App::normalized_ai_query("\n\t").is_none());
+    }
+
+    #[tokio::test]
+    async fn selected_history_chat_id_generates_new_id_when_history_empty() {
+        let state = Arc::new(RwLock::new(HistoryPanelState::default()));
+        let chat_id = App::selected_history_chat_id(state.clone()).await;
+        let chat_id = chat_id.expect("expected helper to create a chat id");
+        assert!(!chat_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn selected_history_chat_id_returns_none_when_selection_missing() {
+        let record = ChatHistoryRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            role: ChatRole::User,
+            summary: "initial-round".to_string(),
+            content: "the content".to_string(),
+            source: None,
+            chat_hash: Some("existing-chat".to_string()),
+        };
+        let mut state = HistoryPanelState::from_records(vec![record]);
+        state.select_chat(None);
+        let guard = Arc::new(RwLock::new(state));
+        assert!(App::selected_history_chat_id(guard).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn selected_history_chat_id_returns_new_id_when_new_chat_selected() {
+        let record = ChatHistoryRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            role: ChatRole::User,
+            summary: "existing".to_string(),
+            content: "prompt".to_string(),
+            source: None,
+            chat_hash: Some("existing-chat".to_string()),
+        };
+        let mut state = HistoryPanelState::from_records(vec![record]);
+        state.select_new_chat();
+        let guard = Arc::new(RwLock::new(state));
+        let chat_id = App::selected_history_chat_id(guard).await;
+        let chat_id = chat_id.expect("expected new chat id");
+        assert_ne!(chat_id, "existing-chat");
     }
 }

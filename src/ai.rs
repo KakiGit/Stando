@@ -1,5 +1,6 @@
 use crate::history::UsageHistory;
-use crate::history_panel::{ChatHistoryEntry, ChatHistoryRecord, HistoryPanelState};
+use crate::history::ChatHistoryRecord;
+use crate::history_panel::HistoryPanelState;
 use crate::logging;
 use crate::search::{SearchEngine, SearchResult};
 use anyhow::{Context, Result};
@@ -171,13 +172,12 @@ impl AIService {
     pub fn notify_history_state(
         history_state: Arc<RwLock<HistoryPanelState>>,
         usage_history: Arc<UsageHistory>,
-        entry: ChatHistoryEntry,
+        record: ChatHistoryRecord,
     ) {
         MainContext::default().spawn_local(async move {
             let mut guard = history_state.write().await;
-            guard.append_entry(entry.clone());
+            guard.append_record(record.clone());
             drop(guard);
-            let record = ChatHistoryRecord::from(entry);
             usage_history.record_chat_entry(record).await;
         });
     }

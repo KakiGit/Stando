@@ -1,25 +1,31 @@
-use crate::history_panel::{ChatHistoryEntry, HistoryPanelState, DEFAULT_EMPTY_MESSAGE};
+use crate::history::ChatSummary;
+use crate::history_panel::{HistoryPanelState, DEFAULT_EMPTY_MESSAGE};
 use crate::logging;
 use crate::search::SearchResult;
 use adw::Application;
 use anyhow::{Context, Result};
-use chrono::Local;
 use gdk4::prelude::*;
 use gdk4::{Display, Key, Monitor, Rectangle};
 use gio::prelude::ListModelExt;
-use glib::{prelude::Cast, Propagation};
+use glib::{prelude::Cast, ControlFlow, Propagation};
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box, Button, Entry, Label, ListBox, ListBoxRow, Paned, ScrolledWindow,
-    Stack, TextView,
+    ApplicationWindow, Box, Button, Entry, Label, ListBox, ListBoxRow, MessageDialog, Paned,
+    ScrolledWindow, Stack, TextView,
+    ButtonsType, DialogFlags, MessageType,
 };
+use std::cell::RefCell;
 use std::fs;
+use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use xdg::BaseDirectories;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
+const NEW_CHAT_ROW_HEADER: &str = "New chat";
+const NEW_CHAT_ROW_SUMMARY: &str =
+    "Send input while this row is selected to create a fresh AI conversation.";
 const DEFAULT_WINDOW_WIDTH: i32 = 800;
 const DEFAULT_WINDOW_HEIGHT: i32 = 600;
 
@@ -49,17 +55,23 @@ impl SearchWindow {
             .application(app)
             .title("Stando")
             .resizable(true)
-            .decorated(false)
+            .decorated(true)
             .build();
         window.add_css_class("search-window");
 
         // Center and size the window before showing it.
         Self::configure_window_geometry(&window);
-        let (default_window_width, _) = Self::calculate_window_dimensions();
+        window.connect_realize(|window| {
+            SearchWindow::configure_window_geometry(window);
+        });
+        let (default_window_width, default_window_height) =
+            Self::calculate_window_dimensions(Some(&window));
 
         // Main container
         let main_box = Box::new(gtk4::Orientation::Vertical, 0);
         main_box.add_css_class("search-main");
+        main_box.set_hexpand(true);
+        main_box.set_vexpand(true);
         window.set_child(Some(&main_box));
 
         // Search bar container (horizontal box for entry + button)
@@ -93,6 +105,9 @@ impl SearchWindow {
         content_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
         content_stack.set_transition_duration(200);
         content_stack.add_css_class("search-results-stack");
+        content_stack.set_hhomogeneous(true);
+        // Allow the visible child to dictate height instead of the largest natural size.
+        content_stack.set_vhomogeneous(false);
         content_stack.set_vexpand(true);
         content_stack.set_hexpand(true);
         main_box.append(&content_stack);
@@ -106,6 +121,17 @@ impl SearchWindow {
         let results_list_box = ListBox::new();
         results_list_box.set_css_classes(&["search-results-list"]);
         results_list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        results_list_box.set_hexpand(true);
+        results_list_box.set_vexpand(false);
+        results_list_box.set_valign(gtk4::Align::Start);
+        results_list_box.set_size_request(-1, 1);
+        // Keep the window height stable by letting the scroller use available space
+        // instead of requesting the list's natural height.
+        results_scrolled.set_propagate_natural_height(false);
+        results_scrolled.set_propagate_natural_width(false);
+        results_scrolled.set_min_content_height(1);
+        results_scrolled.set_min_content_width(1);
+        results_scrolled.set_max_content_height(default_window_height);
         results_scrolled.set_child(Some(&results_list_box));
         content_stack.add_named(&results_scrolled, Some("search-results"));
 
@@ -169,6 +195,21 @@ impl SearchWindow {
             );
         }
 
+        // Debug widget sizes to diagnose layout constraints.
+        Self::attach_size_logger(&window, "window");
+        Self::attach_size_logger(&main_box, "main_box");
+        Self::attach_size_logger(&search_box, "search_box");
+        Self::attach_size_logger(&entry, "entry");
+        Self::attach_size_logger(&ai_button, "ai_button");
+        Self::attach_size_logger(&content_stack, "content_stack");
+        Self::attach_size_logger(&results_scrolled, "results_scrolled");
+        Self::attach_size_logger(&results_list_box, "results_list_box");
+        Self::attach_size_logger(&history_paned, "history_paned");
+        Self::attach_size_logger(&history_detail, "history_detail");
+        Self::attach_size_logger(&history_list_stack, "history_list_stack");
+        Self::attach_size_logger(&history_list_scrolled, "history_list_scrolled");
+        Self::attach_size_logger(&history_list_box, "history_list_box");
+
         // History interaction helpers
         let history_selection_state = history_panel_state.clone();
         let history_list_box_for_selection = history_list_box.clone();
@@ -176,41 +217,49 @@ impl SearchWindow {
         let history_empty_label_for_selection = history_empty_label.clone();
         let history_detail_for_selection = history_detail.clone();
         let history_entry_for_focus = entry.clone();
-        history_list_box.connect_row_selected(move |_, row| {
-            let entry_index = row.and_then(|row| {
-                let index = row.index();
-                if index < 0 {
-                    None
-                } else {
-                    Some(index as usize)
-                }
-            });
-            let entry_index = match entry_index {
-                Some(index) => index,
-                None => return,
-            };
-            let history_state = history_selection_state.clone();
-            let list_box = history_list_box_for_selection.clone();
-            let stack = history_list_stack_for_selection.clone();
-            let placeholder = history_empty_label_for_selection.clone();
-            let detail = history_detail_for_selection.clone();
-            let entry_focus = history_entry_for_focus.clone();
-            glib::MainContext::default().spawn_local(async move {
-                let mut guard = history_state.write().await;
-                if let Some(entry) = guard.entries().get(entry_index) {
-                    let entry_id = entry.id;
-                    if guard.selected_entry_id() == Some(entry_id) {
+            history_list_box.connect_row_selected(move |_, row| {
+                let entry_index = row.and_then(|row| {
+                    let index = row.index();
+                    if index < 0 {
+                        None
+                    } else {
+                        Some(index as usize)
+                    }
+                });
+                let entry_index = match entry_index {
+                    Some(index) => index,
+                    None => return,
+                };
+                let history_state = history_selection_state.clone();
+                let list_box = history_list_box_for_selection.clone();
+                let stack = history_list_stack_for_selection.clone();
+                let placeholder = history_empty_label_for_selection.clone();
+                let detail = history_detail_for_selection.clone();
+                let entry_focus = history_entry_for_focus.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let mut guard = history_state.write().await;
+                    if guard.is_new_chat_row_index(entry_index) {
+                        if guard.is_new_chat_selected() {
+                            return;
+                        }
+                        guard.select_new_chat();
+                    } else if let Some(chat_id) = guard.chat_id_at_index(entry_index) {
+                        if guard.selected_chat_id() == Some(chat_id.as_str())
+                            && !guard.is_new_chat_selected()
+                        {
+                            return;
+                        }
+                        guard.select_chat(Some(chat_id.clone()));
+                        tracing::debug!(selected_chat = %chat_id, "History row selected");
+                    } else {
                         return;
                     }
-                    guard.select_entry(Some(entry_id));
-                    tracing::debug!(selected_entry = ?Some(entry_id), "History row selected");
                     drop(guard);
                     let guard = history_state.read().await;
                     sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
                     entry_focus.grab_focus();
-                }
+                });
             });
-        });
 
         let history_state_for_entry_keys = history_panel_state.clone();
         let history_list_box_for_entry_keys = history_list_box.clone();
@@ -345,6 +394,10 @@ impl SearchWindow {
 
     pub fn show(&self) {
         let _log_guard = logging::function_guard("SearchWindow::show");
+        // Re-apply sizing on each show in case the window manager cached a prior size.
+        self.window.unfullscreen();
+        self.window.unmaximize();
+        Self::configure_window_geometry(&self.window);
         self.window.set_visible(true);
         self.window.present();
         self.entry.grab_focus();
@@ -369,6 +422,18 @@ impl SearchWindow {
             &self.history_detail,
             state,
         );
+    }
+
+    pub fn show_ai_error_notification(&self, message: &str) {
+        let dialog = MessageDialog::new(
+            Some(&self.window),
+            DialogFlags::MODAL | DialogFlags::DESTROY_WITH_PARENT,
+            MessageType::Error,
+            ButtonsType::Ok,
+            message,
+        );
+        dialog.connect_response(|dialog, _| dialog.close());
+        dialog.present();
     }
 
     pub fn focus_history_list(&self) {
@@ -532,27 +597,74 @@ impl SearchWindow {
     }
 
     fn configure_window_geometry(window: &ApplicationWindow) {
-        let (width, height) = Self::calculate_window_dimensions();
+        let (width, height) = Self::calculate_window_dimensions(Some(window));
         window.set_default_size(width, height);
+        window.set_resizable(true);
     }
 
-    fn calculate_window_dimensions() -> (i32, i32) {
-        Self::primary_monitor_geometry()
-            .map(|geometry| {
-                (
-                    (geometry.width() / 2).max(1),
-                    (geometry.height() / 2).max(1),
-                )
+    fn calculate_window_dimensions(window: Option<&ApplicationWindow>) -> (i32, i32) {
+        Self::primary_monitor_geometry(window)
+            .map(|(geometry, scale)| {
+                let monitor_width = geometry.width().max(1);
+                let monitor_height = geometry.height().max(1);
+                let width = (monitor_width / 2).max(1);
+                let height = (monitor_height / 2).max(1);
+                tracing::info!(
+                    monitor_width = geometry.width(),
+                    monitor_height = geometry.height(),
+                    monitor_scale = scale,
+                    window_width = width,
+                    window_height = height,
+                    "Computed default window size from monitor geometry"
+                );
+                (width, height)
             })
-            .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT))
+            .unwrap_or_else(|| {
+                tracing::info!(
+                    fallback_width = DEFAULT_WINDOW_WIDTH,
+                    fallback_height = DEFAULT_WINDOW_HEIGHT,
+                    "Falling back to default window size"
+                );
+                (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+            })
     }
 
-    fn primary_monitor_geometry() -> Option<Rectangle> {
+    fn primary_monitor_geometry(window: Option<&ApplicationWindow>) -> Option<(Rectangle, i32)> {
+        if let Some(window) = window {
+            if let Some(surface) = window.surface() {
+                let display = surface.display();
+                if let Some(monitor) = display.monitor_at_surface(&surface) {
+                    return Some((monitor.geometry(), monitor.scale_factor()));
+                }
+            }
+        }
+
         let display = Display::default()?;
         let monitors = display.monitors();
         let monitor_object = monitors.item(0)?;
         let monitor = monitor_object.downcast::<Monitor>().ok()?;
-        Some(monitor.geometry())
+        Some((monitor.geometry(), monitor.scale_factor()))
+    }
+
+    fn attach_size_logger<W: gtk4::prelude::IsA<gtk4::Widget>>(widget: &W, name: &'static str) {
+        let widget = widget.clone().upcast::<gtk4::Widget>();
+        let last = Rc::new(RefCell::new((-1, -1)));
+        let last_for_signal = last.clone();
+        widget.add_tick_callback(move |widget, _| {
+            let width = widget.allocated_width();
+            let height = widget.allocated_height();
+            let mut last = last_for_signal.borrow_mut();
+            if *last != (width, height) {
+                *last = (width, height);
+                tracing::info!(
+                    widget = name,
+                    width,
+                    height,
+                    "Widget size allocation"
+                );
+            }
+            ControlFlow::Continue
+        });
     }
 }
 
@@ -577,18 +689,21 @@ fn sync_history_widgets(
     }
 
     stack.set_visible_child_name("history-list");
-    for entry in state.entries() {
-        let row = build_history_row(entry);
+    for summary in state.chat_summaries() {
+        let row = build_history_row(&summary);
+        list_box.append(&row);
+    }
+
+    if state.has_new_chat_row() {
+        let row = build_new_chat_row();
         list_box.append(&row);
     }
 
     if let Some(index) = state.selected_index() {
         if let Some(row) = list_box.row_at_index(index as i32) {
             list_box.select_row(Some(&row));
-            if let Some(entry) = state.entries().get(index) {
-                let buffer = detail.buffer();
-                buffer.set_text(&entry.content);
-            }
+            let buffer = detail.buffer();
+            buffer.set_text(&state.selected_timeline_text());
         }
     } else {
         list_box.unselect_all();
@@ -597,33 +712,54 @@ fn sync_history_widgets(
     }
 }
 
-fn build_history_row(entry: &ChatHistoryEntry) -> ListBoxRow {
+fn build_history_row(summary: &ChatSummary) -> ListBoxRow {
     let row = ListBoxRow::new();
     row.set_css_classes(&["history-entry-row"]);
-    let timestamp = entry
-        .timestamp
-        .with_timezone(&Local)
-        .format("%H:%M:%S")
-        .to_string();
     let container = Box::new(gtk4::Orientation::Vertical, 4);
     container.set_margin_top(4);
     container.set_margin_bottom(4);
     container.set_margin_start(6);
     container.set_margin_end(6);
 
-    let header = Label::new(Some(&format!(
-        "{} • {} • {}",
-        timestamp,
-        entry.role.label(),
-        entry.summary
-    )));
+    let header = Label::new(Some(&summary.display_label));
     header.set_xalign(0.0);
     header.set_wrap(true);
     header.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
     header.set_css_classes(&["history-entry-header"]);
     container.append(&header);
 
-    let content_label = Label::new(Some(&entry.content));
+    let content_label = Label::new(Some(&format!(
+        "{} • {} rounds",
+        summary.chat_hash, summary.round_count
+    )));
+    content_label.set_xalign(0.0);
+    content_label.set_wrap(true);
+    content_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    content_label.set_css_classes(&["history-entry-content"]);
+    container.append(&content_label);
+
+    row.set_child(Some(&container));
+    row.set_selectable(true);
+    row
+}
+
+fn build_new_chat_row() -> ListBoxRow {
+    let row = ListBoxRow::new();
+    row.set_css_classes(&["history-entry-row", "history-entry-new"]);
+    let container = Box::new(gtk4::Orientation::Vertical, 4);
+    container.set_margin_top(4);
+    container.set_margin_bottom(4);
+    container.set_margin_start(6);
+    container.set_margin_end(6);
+
+    let header = Label::new(Some(NEW_CHAT_ROW_HEADER));
+    header.set_xalign(0.0);
+    header.set_wrap(true);
+    header.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    header.set_css_classes(&["history-entry-header"]);
+    container.append(&header);
+
+    let content_label = Label::new(Some(NEW_CHAT_ROW_SUMMARY));
     content_label.set_xalign(0.0);
     content_label.set_wrap(true);
     content_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
