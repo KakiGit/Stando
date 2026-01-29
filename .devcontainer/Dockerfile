@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     zsh \
     locales \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 #uncomment en_US.UTF-8 UTF-8 in /etc/locale.gen

@@ -32,5 +32,8 @@
 		"source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
 		"source=${localEnv:XDG_RUNTIME_DIR},target=/tmp/runtime-vscode,type=bind,consistency=cached"
 	],
-	"postCreateCommand": "rustc --version && cargo --version"
+	"runArgs": [
+		"--network=shared-network"
+	],
+	"postCreateCommand": "bash .devcontainer/post-create.sh"
 }

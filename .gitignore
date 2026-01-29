@@ -13,3 +13,4 @@ release/
 *.rlib
 *.tmp
 *.swp
+post-create.sh
