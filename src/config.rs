@@ -28,6 +28,7 @@ impl Default for FloatingPreference {
 pub struct Config {
     pub openai_api_key: Option<String>,
     pub search_paths: Vec<String>,
+    pub app_search_paths: Vec<String>,
     pub max_results: usize,
     pub hotkey_show: String,
     /// Window-local shortcut for toggling AI mode.
@@ -38,9 +39,15 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let _log_guard = logging::function_guard("Config::default");
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
         Self {
             openai_api_key: None,
-            search_paths: vec![std::env::var("HOME").unwrap_or_else(|_| "/home".to_string())],
+            search_paths: vec![home_dir.clone()],
+            app_search_paths: vec![
+                "/usr/share/applications".to_string(),
+                "/usr/local/share/applications".to_string(),
+                format!("{}/.local/share/applications", home_dir),
+            ],
             max_results: 20,
             hotkey_show: "Super+Space".to_string(),
             hotkey_ai_toggle: "<Control>i".to_string(),

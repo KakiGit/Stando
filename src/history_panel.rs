@@ -365,7 +365,12 @@ mod tests {
         }
     }
 
-    fn round(id: u128, role: ChatRole, timestamp: DateTime<Utc>, content: &str) -> ConversationRound {
+    fn round(
+        id: u128,
+        role: ChatRole,
+        timestamp: DateTime<Utc>,
+        content: &str,
+    ) -> ConversationRound {
         ConversationRound {
             round_id: Uuid::from_u128(id),
             role,
@@ -484,17 +489,22 @@ mod tests {
     #[test]
     fn selecting_new_chat_row_shows_instruction_message() {
         let timestamp = Utc.with_ymd_and_hms(2026, 1, 1, 10, 0, 0).unwrap();
-        let mut state = HistoryPanelState::with_chats(vec![chat_group("chat-new", timestamp)], None);
+        let mut state =
+            HistoryPanelState::with_chats(vec![chat_group("chat-new", timestamp)], None);
         state.select_new_chat();
         assert!(state.is_new_chat_selected());
         assert_eq!(state.selected_index(), state.new_chat_row_index());
-        assert_eq!(state.selected_timeline_text(), NEW_CHAT_DETAIL_MESSAGE.to_string());
+        assert_eq!(
+            state.selected_timeline_text(),
+            NEW_CHAT_DETAIL_MESSAGE.to_string()
+        );
     }
 
     #[test]
     fn navigation_moves_into_and_out_of_new_chat_row() {
         let timestamp = Utc.with_ymd_and_hms(2026, 1, 1, 10, 0, 0).unwrap();
-        let mut state = HistoryPanelState::with_chats(vec![chat_group("chat-move", timestamp)], None);
+        let mut state =
+            HistoryPanelState::with_chats(vec![chat_group("chat-move", timestamp)], None);
         assert!(!state.is_new_chat_selected());
         state.move_selection_down();
         assert!(state.is_new_chat_selected());

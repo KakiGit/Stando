@@ -1,5 +1,5 @@
-use crate::history::UsageHistory;
 use crate::history::ChatHistoryRecord;
+use crate::history::UsageHistory;
 use crate::history_panel::HistoryPanelState;
 use crate::logging;
 use crate::search::{SearchEngine, SearchResult};

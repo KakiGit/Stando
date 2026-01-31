@@ -118,17 +118,10 @@ impl SearchEngine {
         result
     }
 
-    pub async fn index_applications(&self) -> Result<()> {
+    pub async fn index_applications(&self, app_dirs: &[String]) -> Result<()> {
         let log_guard = logging::function_guard("SearchEngine::index_applications");
         let result = async {
             let mut results = Vec::new();
-
-            let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-            let app_dirs = vec![
-                "/usr/share/applications".to_string(),
-                "/usr/local/share/applications".to_string(),
-                format!("{}/.local/share/applications", home_dir),
-            ];
 
             for app_dir in app_dirs {
                 let dir = Path::new(&app_dir);

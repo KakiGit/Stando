@@ -128,7 +128,12 @@ pub fn group_chat_history(records: Vec<ChatHistoryRecord>) -> Vec<ChatGroup> {
     }
 
     let mut grouped = groups.into_values().collect::<Vec<_>>();
-    grouped.sort_by(|left, right| right.metadata.last_timestamp.cmp(&left.metadata.last_timestamp));
+    grouped.sort_by(|left, right| {
+        right
+            .metadata
+            .last_timestamp
+            .cmp(&left.metadata.last_timestamp)
+    });
     grouped
 }
 
@@ -145,18 +150,12 @@ pub fn grouped_history_with_selection(
     (grouped, selected_chat_id)
 }
 
-pub fn chat_timeline_by_hash(
-    chats: &[ChatGroup],
-    chat_id: &str,
-) -> Option<Vec<ConversationRound>> {
-    chats
-        .iter()
-        .find(|chat| chat.id == chat_id)
-        .map(|chat| {
-            let mut rounds = chat.rounds.clone();
-            rounds.sort_by_key(|round| round.timestamp);
-            rounds
-        })
+pub fn chat_timeline_by_hash(chats: &[ChatGroup], chat_id: &str) -> Option<Vec<ConversationRound>> {
+    chats.iter().find(|chat| chat.id == chat_id).map(|chat| {
+        let mut rounds = chat.rounds.clone();
+        rounds.sort_by_key(|round| round.timestamp);
+        rounds
+    })
 }
 
 pub struct UsageHistory {

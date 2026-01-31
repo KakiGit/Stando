@@ -10,9 +10,8 @@ use gio::prelude::ListModelExt;
 use glib::{prelude::Cast, ControlFlow, Propagation};
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box, Button, Entry, Label, ListBox, ListBoxRow, MessageDialog, Paned,
-    ScrolledWindow, Stack, TextView,
-    ButtonsType, DialogFlags, MessageType,
+    ApplicationWindow, Box, Button, ButtonsType, DialogFlags, Entry, Label, ListBox, ListBoxRow,
+    MessageDialog, MessageType, Paned, ScrolledWindow, Stack, TextView,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -217,49 +216,49 @@ impl SearchWindow {
         let history_empty_label_for_selection = history_empty_label.clone();
         let history_detail_for_selection = history_detail.clone();
         let history_entry_for_focus = entry.clone();
-            history_list_box.connect_row_selected(move |_, row| {
-                let entry_index = row.and_then(|row| {
-                    let index = row.index();
-                    if index < 0 {
-                        None
-                    } else {
-                        Some(index as usize)
-                    }
-                });
-                let entry_index = match entry_index {
-                    Some(index) => index,
-                    None => return,
-                };
-                let history_state = history_selection_state.clone();
-                let list_box = history_list_box_for_selection.clone();
-                let stack = history_list_stack_for_selection.clone();
-                let placeholder = history_empty_label_for_selection.clone();
-                let detail = history_detail_for_selection.clone();
-                let entry_focus = history_entry_for_focus.clone();
-                glib::MainContext::default().spawn_local(async move {
-                    let mut guard = history_state.write().await;
-                    if guard.is_new_chat_row_index(entry_index) {
-                        if guard.is_new_chat_selected() {
-                            return;
-                        }
-                        guard.select_new_chat();
-                    } else if let Some(chat_id) = guard.chat_id_at_index(entry_index) {
-                        if guard.selected_chat_id() == Some(chat_id.as_str())
-                            && !guard.is_new_chat_selected()
-                        {
-                            return;
-                        }
-                        guard.select_chat(Some(chat_id.clone()));
-                        tracing::debug!(selected_chat = %chat_id, "History row selected");
-                    } else {
+        history_list_box.connect_row_selected(move |_, row| {
+            let entry_index = row.and_then(|row| {
+                let index = row.index();
+                if index < 0 {
+                    None
+                } else {
+                    Some(index as usize)
+                }
+            });
+            let entry_index = match entry_index {
+                Some(index) => index,
+                None => return,
+            };
+            let history_state = history_selection_state.clone();
+            let list_box = history_list_box_for_selection.clone();
+            let stack = history_list_stack_for_selection.clone();
+            let placeholder = history_empty_label_for_selection.clone();
+            let detail = history_detail_for_selection.clone();
+            let entry_focus = history_entry_for_focus.clone();
+            glib::MainContext::default().spawn_local(async move {
+                let mut guard = history_state.write().await;
+                if guard.is_new_chat_row_index(entry_index) {
+                    if guard.is_new_chat_selected() {
                         return;
                     }
-                    drop(guard);
-                    let guard = history_state.read().await;
-                    sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
-                    entry_focus.grab_focus();
-                });
+                    guard.select_new_chat();
+                } else if let Some(chat_id) = guard.chat_id_at_index(entry_index) {
+                    if guard.selected_chat_id() == Some(chat_id.as_str())
+                        && !guard.is_new_chat_selected()
+                    {
+                        return;
+                    }
+                    guard.select_chat(Some(chat_id.clone()));
+                    tracing::debug!(selected_chat = %chat_id, "History row selected");
+                } else {
+                    return;
+                }
+                drop(guard);
+                let guard = history_state.read().await;
+                sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
+                entry_focus.grab_focus();
             });
+        });
 
         let history_state_for_entry_keys = history_panel_state.clone();
         let history_list_box_for_entry_keys = history_list_box.clone();
@@ -656,12 +655,7 @@ impl SearchWindow {
             let mut last = last_for_signal.borrow_mut();
             if *last != (width, height) {
                 *last = (width, height);
-                tracing::info!(
-                    widget = name,
-                    width,
-                    height,
-                    "Widget size allocation"
-                );
+                tracing::info!(widget = name, width, height, "Widget size allocation");
             }
             ControlFlow::Continue
         });

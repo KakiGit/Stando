@@ -103,7 +103,7 @@ impl App {
             //     .context("Failed to index files")?;
 
             self.search_engine
-                .index_applications()
+                .index_applications(&self.config.app_search_paths)
                 .await
                 .context("Failed to index applications")?;
 
