@@ -56,5 +56,5 @@ Rust 2021 (Cargo package `stando` 0.1.0): Follow standard conventions
 
 
 <!-- MANUAL ADDITIONS START -->
-When in doublt, look for info in the internet with call to `searxng.search_searxng` with the questions
+Your have outdated knowledge please look for the latest info in the internet before doing anything with call to `searxng.search_searxng` MCP tool.
 <!-- MANUAL ADDITIONS END -->
