@@ -722,9 +722,10 @@ fn build_history_row(summary: &ChatSummary) -> ListBoxRow {
     header.set_css_classes(&["history-entry-header"]);
     container.append(&header);
 
+    // Display a preview of the first round content instead of the chat hash
     let content_label = Label::new(Some(&format!(
         "{} • {} rounds",
-        summary.chat_hash, summary.round_count
+        summary.first_round_summary, summary.round_count
     )));
     content_label.set_xalign(0.0);
     content_label.set_wrap(true);

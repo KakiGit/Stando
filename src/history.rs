@@ -88,6 +88,8 @@ pub struct ChatSummary {
     pub last_actor: ChatRole,
     pub last_timestamp: DateTime<Utc>,
     pub round_count: usize,
+    // Summary text of the first conversation round in the chat.
+    pub first_round_summary: String,
 }
 
 pub fn normalize_chat_hash(hash: Option<&str>) -> String {

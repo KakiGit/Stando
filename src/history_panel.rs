@@ -97,12 +97,31 @@ impl HistoryPanelState {
                     chat.metadata.last_speaker.label(),
                     local_time.format("%Y-%m-%d %H:%M:%S")
                 );
+                // Compute a short preview of the first conversation round
+                let first_round_summary = if let Some(first) = chat.rounds.first() {
+                    // Replicate the summarization logic used by App::summarize_content
+                    let trimmed = first.content.trim();
+                    if trimmed.is_empty() {
+                        "[no content]".to_string()
+                    } else {
+                        let first_line = trimmed.lines().next().unwrap_or("").trim();
+                        let mut preview = first_line.chars().take(80).collect::<String>();
+                        if preview.is_empty() {
+                            "[no preview]".to_string()
+                        } else {
+                            preview
+                        }
+                    }
+                } else {
+                    "[empty]".to_string()
+                };
                 ChatSummary {
                     chat_hash: chat.id.clone(),
                     display_label,
                     last_actor: chat.metadata.last_speaker,
                     last_timestamp,
                     round_count: chat.rounds.len(),
+                    first_round_summary,
                 }
             })
             .collect()
