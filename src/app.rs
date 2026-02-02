@@ -56,8 +56,14 @@ impl App {
                 .openai_api_key
                 .as_ref()
                 .map(|key| {
+                    let base_url = config
+                        .ai_base_url
+                        .as_deref()
+                        .unwrap_or("https://api.openai.com")
+                        .to_string();
                     Arc::new(AIService::new(
                         key.clone(),
+                        base_url,
                         search_engine.clone(),
                         history.clone(),
                     ))

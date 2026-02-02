@@ -43,16 +43,18 @@ struct Delta {
 pub struct AIService {
     client: Client,
     api_key: String,
+    base_url: String,
     search_engine: Arc<SearchEngine>,
     usage_history: Arc<UsageHistory>,
 }
 
 impl AIService {
-    pub fn new(api_key: String, search_engine: Arc<SearchEngine>, usage_history: Arc<UsageHistory>) -> Self {
+    pub fn new(api_key: String, base_url: String, search_engine: Arc<SearchEngine>, usage_history: Arc<UsageHistory>) -> Self {
         let _log_guard = logging::function_guard("AIService::new");
         Self {
             client: Client::new(),
             api_key,
+            base_url,
             search_engine,
             usage_history,
         }
@@ -108,15 +110,16 @@ impl AIService {
 
             // Make API request (non-streaming for simplicity)
             let request = ChatRequest {
-                model: "gpt-3.5-turbo".to_string(),
+                model: "qwen2.5:7b".to_string(),
                 messages,
                 stream: false,
             };
             tracing::debug!("ChatRequest: {:?}", request);
 
+            let base = self.base_url.trim_end_matches('/');
             let response = self
                 .client
-                .post("https://api.openai.com/v1/chat/completions")
+                .post(&format!("{}/v1/chat/completions", base))
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&request)

@@ -33,6 +33,8 @@ pub struct Config {
     pub hotkey_show: String,
     /// Window-local shortcut for toggling AI mode.
     pub hotkey_ai_toggle: String,
+    /// Base URL for the AI service. Defaults to OpenAI.
+    pub ai_base_url: Option<String>,
     pub floating_preference: FloatingPreference,
 }
 
@@ -51,6 +53,7 @@ impl Default for Config {
             max_results: 20,
             hotkey_show: "Super+Space".to_string(),
             hotkey_ai_toggle: "<Control>i".to_string(),
+            ai_base_url: None,
             floating_preference: FloatingPreference::default(),
         }
     }
