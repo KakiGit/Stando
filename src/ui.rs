@@ -5,7 +5,7 @@ use crate::search::SearchResult;
 use adw::Application;
 use anyhow::{Context, Result};
 use gdk4::prelude::*;
-use gdk4::{Display, Key, Monitor, Rectangle};
+use gdk4::{Display, Key, Monitor, Rectangle, ModifierType};
 use gio::prelude::ListModelExt;
 use glib::{prelude::Cast, ControlFlow, Propagation};
 use gtk4::prelude::*;
@@ -272,6 +272,7 @@ impl SearchWindow {
             if !is_history_panel_visible(&content_stack_for_entry_keys) {
                 return Propagation::Proceed;
             }
+            // Handle navigation keys (Up/Down)
             let handled = schedule_history_navigation(
                 keyval,
                 history_state_for_entry_keys.clone(),
@@ -282,10 +283,33 @@ impl SearchWindow {
             );
             if handled {
                 entry_for_navigation.grab_focus();
-                Propagation::Stop
-            } else {
-                Propagation::Proceed
+                return Propagation::Stop;
             }
+
+            // Handle Delete key to remove selected chat
+            if keyval == gdk4::Key::Delete && _state.contains(ModifierType::CONTROL_MASK) {
+                let history_state_clone = history_state_for_entry_keys.clone();
+                let list_box_clone = history_list_box_for_entry_keys.clone();
+                let stack_clone = history_list_stack_for_entry_keys.clone();
+                let placeholder_clone = history_empty_label_for_entry_keys.clone();
+                let detail_clone = history_detail_for_entry_keys.clone();
+                let content_stack_clone = content_stack_for_entry_keys.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let mut guard = history_state_clone.write().await;
+                    guard.delete_selected_chat();
+                    drop(guard);
+                    let guard = history_state_clone.read().await;
+                    sync_history_widgets(
+                        &list_box_clone,
+                        &stack_clone,
+                        &placeholder_clone,
+                        &detail_clone,
+                        &guard,
+                    );
+                });
+                return Propagation::Stop;
+            }
+            Propagation::Proceed
         });
         entry.add_controller(navigation_controller.clone());
 

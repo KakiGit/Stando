@@ -264,6 +264,34 @@ impl HistoryPanelState {
         }
     }
 
+    /// Delete the currently selected chat from the history.
+    /// If the selected chat is the last one, the previous chat becomes selected.
+    /// If no chats remain, clears selection.
+    pub fn delete_selected_chat(&mut self) {
+        // Only proceed if there is a selected chat row.
+        let index_opt = self.selected_index();
+        if let Some(index) = index_opt {
+            // Remove the chat at the index.
+            if index < self.chats.len() {
+                self.chats.remove(index);
+            }
+            // After removal, adjust selection.
+            if self.chats.is_empty() {
+                self.selected_chat_id = None;
+                self.selected_new_chat = false;
+                self.selected_visible_range = 0..=0;
+            } else {
+                // If we removed the last item, select the new last; otherwise keep same index.
+                let new_index = if index >= self.chats.len() {
+                    self.chats.len() - 1
+                } else {
+                    index
+                };
+                self.select_row_index(new_index);
+            }
+        }
+    }
+
     pub fn select_chat(&mut self, chat_id: Option<String>) {
         if let Some(id) = chat_id {
             if self.chats.iter().any(|chat| chat.id == id) {
