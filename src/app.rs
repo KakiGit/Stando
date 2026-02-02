@@ -61,9 +61,15 @@ impl App {
                         .as_deref()
                         .unwrap_or("https://api.openai.com")
                         .to_string();
+                    let model = config
+                        .ai_model
+                        .as_deref()
+                        .unwrap_or("qwen2.5:7b")
+                        .to_string();
                     Arc::new(AIService::new(
                         key.clone(),
                         base_url,
+                        model,
                         search_engine.clone(),
                         history.clone(),
                     ))
