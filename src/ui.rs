@@ -163,10 +163,12 @@ impl SearchWindow {
         let history_list_box = ListBox::new();
         history_list_box.set_css_classes(&["history-results-list"]);
         history_list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        history_list_box.set_focusable(false);
-        history_list_scrolled.set_child(Some(&history_list_box));
-        history_list_stack.add_named(&history_list_scrolled, Some("history-list"));
-
+        // Make the list box focusable so it can receive key events.
+        history_list_box.set_focusable(true);
+        // Add a key controller to the history list box so that Ctrl+Del
+        // deletes the selected chat when the list has focus.
+        // History list box and its container are set up above.
+        // The empty label is created below.
         let history_empty_label = Label::new(Some(DEFAULT_EMPTY_MESSAGE));
         history_empty_label.set_wrap(true);
         history_empty_label.set_wrap(true);
@@ -176,6 +178,44 @@ impl SearchWindow {
         history_empty_label.set_margin_bottom(16);
         history_empty_label.set_css_classes(&["history-empty-label"]);
         history_list_stack.add_named(&history_empty_label, Some("history-empty"));
+        // Place the history list inside the scrolled window and add to stack.
+        history_list_scrolled.set_child(Some(&history_list_box));
+        history_list_stack.add_named(&history_list_scrolled, Some("history-list"));
+        // Add key controller for Ctrl+Del on the history list box.
+        let history_empty_label_for_controller = history_empty_label.clone();
+        let history_list_box_for_keys = history_list_box.clone();
+        let history_state_for_keys = history_panel_state.clone();
+        let list_box_clone = history_list_box.clone();
+        let stack_clone = history_list_stack.clone();
+        let detail_clone = history_detail.clone();
+        let content_stack_clone = content_stack.clone();
+        let history_list_key_controller = gtk4::EventControllerKey::new();
+        history_list_key_controller.connect_key_pressed(move |_, keyval, _keycode, state| {
+            if keyval == gdk4::Key::Delete && state.contains(ModifierType::CONTROL_MASK) {
+                let history_state_clone = history_state_for_keys.clone();
+                let list_box_clone = list_box_clone.clone();
+                let stack_clone = stack_clone.clone();
+                let placeholder_clone = history_empty_label_for_controller.clone();
+                let detail_clone = detail_clone.clone();
+                let content_stack_clone = content_stack_clone.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let mut guard = history_state_clone.write().await;
+                    guard.delete_selected_chat();
+                    drop(guard);
+                    let guard = history_state_clone.read().await;
+                    sync_history_widgets(
+                        &list_box_clone,
+                        &stack_clone,
+                        &placeholder_clone,
+                        &detail_clone,
+                        &guard,
+                    );
+                });
+                return Propagation::Stop;
+            }
+            Propagation::Proceed
+        });
+        history_list_box.add_controller(history_list_key_controller);
 
         history_paned.set_start_child(Some(&history_detail));
         history_paned.set_end_child(Some(&history_list_stack));
