@@ -55,7 +55,13 @@ impl App {
             let ai_service = config
                 .openai_api_key
                 .as_ref()
-                .map(|key| Arc::new(AIService::new(key.clone(), search_engine.clone())));
+                .map(|key| {
+                    Arc::new(AIService::new(
+                        key.clone(),
+                        search_engine.clone(),
+                        history.clone(),
+                    ))
+                });
 
             // Create search window
             let search_window = Rc::new(
@@ -315,8 +321,9 @@ impl App {
                             let (tx, rx) = oneshot::channel();
                             let ai_service = ai_service.clone();
                             let query_for_thread = normalized_query.clone();
+                            let chat_id_clone = chat_id.clone();
                             thread::spawn(move || {
-                                let result = ai_service.process_query_blocking(&query_for_thread);
+                                let result = ai_service.process_query_blocking(&query_for_thread, &chat_id_clone);
                                 let _ = tx.send(result);
                             });
 

@@ -1,5 +1,4 @@
-use crate::history::ChatHistoryRecord;
-use crate::history::UsageHistory;
+use crate::history::{ChatHistoryRecord, ChatRole, UsageHistory};
 use crate::history_panel::HistoryPanelState;
 use crate::logging;
 use crate::search::{SearchEngine, SearchResult};
@@ -45,19 +44,21 @@ pub struct AIService {
     client: Client,
     api_key: String,
     search_engine: Arc<SearchEngine>,
+    usage_history: Arc<UsageHistory>,
 }
 
 impl AIService {
-    pub fn new(api_key: String, search_engine: Arc<SearchEngine>) -> Self {
+    pub fn new(api_key: String, search_engine: Arc<SearchEngine>, usage_history: Arc<UsageHistory>) -> Self {
         let _log_guard = logging::function_guard("AIService::new");
         Self {
             client: Client::new(),
             api_key,
             search_engine,
+            usage_history,
         }
     }
 
-    pub fn process_query_blocking(&self, query: &str) -> Result<String> {
+    pub fn process_query_blocking(&self, query: &str, chat_id: &str) -> Result<String> {
         let log_guard = logging::function_guard("AIService::process_query_blocking");
         let result = (|| {
             // Parse @ references (async search engine) on this background thread
@@ -82,9 +83,27 @@ impl AIService {
                 });
             }
 
+            let mut content = query.to_string();
+
+            // Append existing chat history for this chat_id
+            let history_records = futures::executor::block_on(self.usage_history.chat_entries());
+            let mut chat_history: Vec<ChatHistoryRecord> = history_records
+                .into_iter()
+                .filter(|r| r.chat_id() == chat_id)
+                .collect();
+            chat_history.sort_by_key(|r| r.timestamp);
+            for record in chat_history {
+                let role_str = match record.role {
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "assistant",
+                };
+                content += &format!("\n[{}]: {}", role_str, record.content);
+            }
+
+            // Finally add the new user query
             messages.push(Message {
                 role: "user".to_string(),
-                content: query.to_string(),
+                content: content.to_string(),
             });
 
             // Make API request (non-streaming for simplicity)
@@ -93,6 +112,7 @@ impl AIService {
                 messages,
                 stream: false,
             };
+            tracing::debug!("ChatRequest: {:?}", request);
 
             let response = self
                 .client
