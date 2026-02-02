@@ -4,6 +4,8 @@ use crate::history::{
 };
 use chrono::Local;
 use std::ops::RangeInclusive;
+use crate::history::GLOBAL_HISTORY;
+use glib;
 
 pub const DEFAULT_EMPTY_MESSAGE: &str =
     "No chats yet. Each entry groups a full chat and shows every round when selected.";
@@ -271,6 +273,8 @@ impl HistoryPanelState {
         // Only proceed if there is a selected chat row.
         let index_opt = self.selected_index();
         if let Some(index) = index_opt {
+            // Keep track of the chat id that is being deleted.
+            let deleted_id = self.selected_chat_id.clone();
             // Remove the chat at the index.
             if index < self.chats.len() {
                 self.chats.remove(index);
@@ -288,6 +292,18 @@ impl HistoryPanelState {
                     index
                 };
                 self.select_row_index(new_index);
+            }
+            // Persist deletion to chat history JSON if a global history is set.
+            if let Some(id) = deleted_id {
+                if let Some(history) = GLOBAL_HISTORY.get().cloned() {
+                    // Spawn async task to delete records.
+                    glib::MainContext::default().spawn_local(async move {
+                        // Fire and forget; ignore the result.
+                        let _ = history
+                            .delete_chat_records_by_hash(&id)
+                            .await;
+                    });
+                }
             }
         }
     }

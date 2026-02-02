@@ -46,7 +46,9 @@ impl App {
             let config = Config::load().context("Failed to load configuration")?;
 
             // Initialize usage history
-            let history = Arc::new(UsageHistory::load());
+        let history = Arc::new(UsageHistory::load());
+        // Set the global history reference for modules that rely on it.
+        crate::history::UsageHistory::set_global_history(history.clone());
 
             // Initialize search engine
             let search_engine = Arc::new(SearchEngine::new(history.clone()));

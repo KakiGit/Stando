@@ -7,8 +7,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use once_cell::sync::OnceCell;
+use std::sync::Arc;
 
 pub const RECENT_CHAT_ID: &str = "recent-chat";
+// Global reference to the shared UsageHistory instance.
+pub static GLOBAL_HISTORY: OnceCell<Arc<crate::history::UsageHistory>> = OnceCell::new();
 
 /// Indicates which participant authored the entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +187,15 @@ impl UsageHistory {
         }
     }
 
+    /// Sets the global reference to this `UsageHistory` instance.
+    ///
+    /// This function is intended to be called once during the application
+    /// initialization so that other modules that only have a read‑only
+    /// reference to `UsageHistory` can access it via the global cell.
+    pub fn set_global_history(history: Arc<Self>) {
+        GLOBAL_HISTORY.set(history).ok();
+    }
+
     pub async fn snapshot(&self) -> HashMap<String, u64> {
         let guard = self.counts.lock().await;
         guard.clone()
@@ -289,6 +302,23 @@ impl UsageHistory {
             serde_json::to_string_pretty(entries).context("Failed to serialize chat history")?;
         fs::write(&tmp_path, content).context("Failed to write temporary chat history file")?;
         fs::rename(tmp_path, path).context("Failed to rename chat history file")?;
+        Ok(())
+    }
+}
+
+impl UsageHistory {
+    /// Deletes all chat history records that match the given `chat_hash`.
+    ///
+    /// The method locks the internal vector, removes matching entries and
+    /// rewrites the JSON file. It returns an error if persistence fails.
+    pub async fn delete_chat_records_by_hash(&self, chat_hash: &str) -> Result<()> {
+        let mut guard = self.chat_entries.lock().await;
+        let original_len = guard.len();
+        guard.retain(|entry| entry.chat_hash.as_deref() != Some(chat_hash));
+        if guard.len() != original_len {
+            // Persist the updated list
+            Self::persist_chat_entries(&self.chat_history_path, &guard)?;
+        }
         Ok(())
     }
 }

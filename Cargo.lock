@@ -1813,6 +1813,7 @@ dependencies = [
  "gtk4",
  "jwalk",
  "libadwaita",
+ "once_cell",
  "open",
  "pkg-config",
  "reqwest",
