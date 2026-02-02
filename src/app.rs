@@ -75,6 +75,14 @@ impl App {
             let ai_mode = Arc::new(RwLock::new(ai_mode_enabled));
             search_window.set_ai_mode(ai_mode_enabled);
 
+            // Hide AI button if no OpenAI API key is configured.
+            // The AI button is part of the UI but should only be usable when the
+            // app has a valid API key. We hide it to avoid confusion.
+            if config.openai_api_key.is_none() {
+                // `ai_button()` returns a reference to the GTK button.
+                search_window.ai_button().set_visible(false);
+            }
+
             Ok(Self {
                 application,
                 config,
