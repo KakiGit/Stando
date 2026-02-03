@@ -50,7 +50,13 @@ pub struct AIService {
 }
 
 impl AIService {
-    pub fn new(api_key: String, base_url: String, model: String, search_engine: Arc<SearchEngine>, usage_history: Arc<UsageHistory>) -> Self {
+    pub fn new(
+        api_key: String,
+        base_url: String,
+        model: String,
+        search_engine: Arc<SearchEngine>,
+        usage_history: Arc<UsageHistory>,
+    ) -> Self {
         let _log_guard = logging::function_guard("AIService::new");
         Self {
             client: Client::new(),

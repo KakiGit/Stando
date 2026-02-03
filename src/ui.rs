@@ -1,11 +1,11 @@
-use crate::history::ChatSummary;
 use crate::history_panel::{HistoryPanelState, DEFAULT_EMPTY_MESSAGE};
+use crate::key_press;
 use crate::logging;
 use crate::search::SearchResult;
 use adw::Application;
 use anyhow::{Context, Result};
 use gdk4::prelude::*;
-use gdk4::{Display, Key, Monitor, Rectangle, ModifierType};
+use gdk4::{Display, Key, ModifierType, Monitor, Rectangle};
 use gio::prelude::ListModelExt;
 use glib::{prelude::Cast, ControlFlow, Propagation};
 use gtk4::prelude::*;
@@ -22,9 +22,6 @@ use xdg::BaseDirectories;
 
 const DEFAULT_PLACEHOLDER: &str = "Search files and applications...";
 const AI_PLACEHOLDER: &str = "What would you like to ask to AI?";
-const NEW_CHAT_ROW_HEADER: &str = "New chat";
-const NEW_CHAT_ROW_SUMMARY: &str =
-    "Send input while this row is selected to create a fresh AI conversation.";
 const DEFAULT_WINDOW_WIDTH: i32 = 800;
 const DEFAULT_WINDOW_HEIGHT: i32 = 600;
 
@@ -182,40 +179,14 @@ impl SearchWindow {
         history_list_scrolled.set_child(Some(&history_list_box));
         history_list_stack.add_named(&history_list_scrolled, Some("history-list"));
         // Add key controller for Ctrl+Del on the history list box.
-        let history_empty_label_for_controller = history_empty_label.clone();
-        let history_list_box_for_keys = history_list_box.clone();
-        let history_state_for_keys = history_panel_state.clone();
-        let list_box_clone = history_list_box.clone();
-        let stack_clone = history_list_stack.clone();
-        let detail_clone = history_detail.clone();
-        let content_stack_clone = content_stack.clone();
-        let history_list_key_controller = gtk4::EventControllerKey::new();
-        history_list_key_controller.connect_key_pressed(move |_, keyval, _keycode, state| {
-            if keyval == gdk4::Key::Delete && state.contains(ModifierType::CONTROL_MASK) {
-                let history_state_clone = history_state_for_keys.clone();
-                let list_box_clone = list_box_clone.clone();
-                let stack_clone = stack_clone.clone();
-                let placeholder_clone = history_empty_label_for_controller.clone();
-                let detail_clone = detail_clone.clone();
-                let content_stack_clone = content_stack_clone.clone();
-                glib::MainContext::default().spawn_local(async move {
-                    let mut guard = history_state_clone.write().await;
-                    guard.delete_selected_chat();
-                    drop(guard);
-                    let guard = history_state_clone.read().await;
-                    sync_history_widgets(
-                        &list_box_clone,
-                        &stack_clone,
-                        &placeholder_clone,
-                        &detail_clone,
-                        &guard,
-                    );
-                });
-                return Propagation::Stop;
-            }
-            Propagation::Proceed
-        });
-        history_list_box.add_controller(history_list_key_controller);
+        let history_list_key_controller = key_press::history_list_key_controller(
+            history_panel_state.clone(),
+            history_list_box.clone(),
+            history_list_stack.clone(),
+            history_empty_label.clone(),
+            history_detail.clone(),
+        );
+        history_list_box.add_controller(history_list_key_controller.clone());
 
         history_paned.set_start_child(Some(&history_detail));
         history_paned.set_end_child(Some(&history_list_stack));
@@ -295,62 +266,20 @@ impl SearchWindow {
                 }
                 drop(guard);
                 let guard = history_state.read().await;
-                sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
+                key_press::sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
                 entry_focus.grab_focus();
             });
         });
 
-        let history_state_for_entry_keys = history_panel_state.clone();
-        let history_list_box_for_entry_keys = history_list_box.clone();
-        let history_list_stack_for_entry_keys = history_list_stack.clone();
-        let history_empty_label_for_entry_keys = history_empty_label.clone();
-        let history_detail_for_entry_keys = history_detail.clone();
-        let content_stack_for_entry_keys = content_stack.clone();
-        let navigation_controller = gtk4::EventControllerKey::new();
-        let entry_for_navigation = entry.clone();
-        navigation_controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
-            if !is_history_panel_visible(&content_stack_for_entry_keys) {
-                return Propagation::Proceed;
-            }
-            // Handle navigation keys (Up/Down)
-            let handled = schedule_history_navigation(
-                keyval,
-                history_state_for_entry_keys.clone(),
-                history_list_box_for_entry_keys.clone(),
-                history_list_stack_for_entry_keys.clone(),
-                history_empty_label_for_entry_keys.clone(),
-                history_detail_for_entry_keys.clone(),
-            );
-            if handled {
-                entry_for_navigation.grab_focus();
-                return Propagation::Stop;
-            }
-
-            // Handle Delete key to remove selected chat
-            if keyval == gdk4::Key::Delete && _state.contains(ModifierType::CONTROL_MASK) {
-                let history_state_clone = history_state_for_entry_keys.clone();
-                let list_box_clone = history_list_box_for_entry_keys.clone();
-                let stack_clone = history_list_stack_for_entry_keys.clone();
-                let placeholder_clone = history_empty_label_for_entry_keys.clone();
-                let detail_clone = history_detail_for_entry_keys.clone();
-                let content_stack_clone = content_stack_for_entry_keys.clone();
-                glib::MainContext::default().spawn_local(async move {
-                    let mut guard = history_state_clone.write().await;
-                    guard.delete_selected_chat();
-                    drop(guard);
-                    let guard = history_state_clone.read().await;
-                    sync_history_widgets(
-                        &list_box_clone,
-                        &stack_clone,
-                        &placeholder_clone,
-                        &detail_clone,
-                        &guard,
-                    );
-                });
-                return Propagation::Stop;
-            }
-            Propagation::Proceed
-        });
+        let navigation_controller = key_press::history_navigation_controller(
+            entry.clone(),
+            content_stack.clone(),
+            history_panel_state.clone(),
+            history_list_box.clone(),
+            history_list_stack.clone(),
+            history_empty_label.clone(),
+            history_detail.clone(),
+        );
         entry.add_controller(navigation_controller.clone());
 
         // Initially hidden
@@ -478,7 +407,7 @@ impl SearchWindow {
 
     pub fn apply_history_state(&self, state: &HistoryPanelState) {
         let _log_guard = logging::function_guard("SearchWindow::apply_history_state");
-        sync_history_widgets(
+        key_press::sync_history_widgets(
             &self.history_list_box,
             &self.history_list_stack,
             &self.history_empty_label,
@@ -724,141 +653,4 @@ impl SearchWindow {
             ControlFlow::Continue
         });
     }
-}
-
-fn sync_history_widgets(
-    list_box: &ListBox,
-    stack: &Stack,
-    placeholder: &Label,
-    detail: &TextView,
-    state: &HistoryPanelState,
-) {
-    while let Some(row) = list_box.row_at_index(0) {
-        list_box.remove(&row);
-    }
-
-    if state.is_empty() {
-        stack.set_visible_child_name("history-empty");
-        let message = state.empty_state_message();
-        placeholder.set_text(message);
-        let buffer = detail.buffer();
-        buffer.set_text(message);
-        return;
-    }
-
-    stack.set_visible_child_name("history-list");
-    for summary in state.chat_summaries() {
-        let row = build_history_row(&summary);
-        list_box.append(&row);
-    }
-
-    if state.has_new_chat_row() {
-        let row = build_new_chat_row();
-        list_box.append(&row);
-    }
-
-    if let Some(index) = state.selected_index() {
-        if let Some(row) = list_box.row_at_index(index as i32) {
-            list_box.select_row(Some(&row));
-            let buffer = detail.buffer();
-            buffer.set_text(&state.selected_timeline_text());
-        }
-    } else {
-        list_box.unselect_all();
-        let buffer = detail.buffer();
-        buffer.set_text(state.empty_state_message());
-    }
-}
-
-fn build_history_row(summary: &ChatSummary) -> ListBoxRow {
-    let row = ListBoxRow::new();
-    row.set_css_classes(&["history-entry-row"]);
-    let container = Box::new(gtk4::Orientation::Vertical, 4);
-    container.set_margin_top(4);
-    container.set_margin_bottom(4);
-    container.set_margin_start(6);
-    container.set_margin_end(6);
-
-    let header = Label::new(Some(&summary.display_label));
-    header.set_xalign(0.0);
-    header.set_wrap(true);
-    header.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-    header.set_css_classes(&["history-entry-header"]);
-    container.append(&header);
-
-    // Display a preview of the first round content instead of the chat hash
-    let content_label = Label::new(Some(&format!(
-        "{} • {} rounds",
-        summary.first_round_summary, summary.round_count
-    )));
-    content_label.set_xalign(0.0);
-    content_label.set_wrap(true);
-    content_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-    content_label.set_css_classes(&["history-entry-content"]);
-    container.append(&content_label);
-
-    row.set_child(Some(&container));
-    row.set_selectable(true);
-    row
-}
-
-fn build_new_chat_row() -> ListBoxRow {
-    let row = ListBoxRow::new();
-    row.set_css_classes(&["history-entry-row", "history-entry-new"]);
-    let container = Box::new(gtk4::Orientation::Vertical, 4);
-    container.set_margin_top(4);
-    container.set_margin_bottom(4);
-    container.set_margin_start(6);
-    container.set_margin_end(6);
-
-    let header = Label::new(Some(NEW_CHAT_ROW_HEADER));
-    header.set_xalign(0.0);
-    header.set_wrap(true);
-    header.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-    header.set_css_classes(&["history-entry-header"]);
-    container.append(&header);
-
-    let content_label = Label::new(Some(NEW_CHAT_ROW_SUMMARY));
-    content_label.set_xalign(0.0);
-    content_label.set_wrap(true);
-    content_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-    content_label.set_css_classes(&["history-entry-content"]);
-    container.append(&content_label);
-
-    row.set_child(Some(&container));
-    row.set_selectable(true);
-    row
-}
-
-fn schedule_history_navigation(
-    keyval: Key,
-    history_state: Arc<RwLock<HistoryPanelState>>,
-    list_box: ListBox,
-    stack: Stack,
-    placeholder: Label,
-    detail: TextView,
-) -> bool {
-    let handled = matches!(keyval, Key::Up | Key::Down | Key::KP_Up | Key::KP_Down);
-    if !handled {
-        return false;
-    }
-
-    let navigation_key = keyval;
-    glib::MainContext::default().spawn_local(async move {
-        let mut guard = history_state.write().await;
-        match navigation_key {
-            Key::Up | Key::KP_Up => guard.move_selection_up(),
-            Key::Down | Key::KP_Down => guard.move_selection_down(),
-            _ => {}
-        }
-        drop(guard);
-        let guard = history_state.read().await;
-        sync_history_widgets(&list_box, &stack, &placeholder, &detail, &guard);
-    });
-
-    true
-}
-
-fn is_history_panel_visible(stack: &Stack) -> bool {
-    stack.visible_child_name().as_deref() == Some("history-panel")
 }

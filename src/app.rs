@@ -46,36 +46,33 @@ impl App {
             let config = Config::load().context("Failed to load configuration")?;
 
             // Initialize usage history
-        let history = Arc::new(UsageHistory::load());
-        // Set the global history reference for modules that rely on it.
-        crate::history::UsageHistory::set_global_history(history.clone());
+            let history = Arc::new(UsageHistory::load());
+            // Set the global history reference for modules that rely on it.
+            crate::history::UsageHistory::set_global_history(history.clone());
 
             // Initialize search engine
             let search_engine = Arc::new(SearchEngine::new(history.clone()));
 
             // Initialize AI service if API key is available
-            let ai_service = config
-                .openai_api_key
-                .as_ref()
-                .map(|key| {
-                    let base_url = config
-                        .ai_base_url
-                        .as_deref()
-                        .unwrap_or("https://api.openai.com")
-                        .to_string();
-                    let model = config
-                        .ai_model
-                        .as_deref()
-                        .unwrap_or("qwen2.5:7b")
-                        .to_string();
-                    Arc::new(AIService::new(
-                        key.clone(),
-                        base_url,
-                        model,
-                        search_engine.clone(),
-                        history.clone(),
-                    ))
-                });
+            let ai_service = config.openai_api_key.as_ref().map(|key| {
+                let base_url = config
+                    .ai_base_url
+                    .as_deref()
+                    .unwrap_or("https://api.openai.com")
+                    .to_string();
+                let model = config
+                    .ai_model
+                    .as_deref()
+                    .unwrap_or("qwen2.5:7b")
+                    .to_string();
+                Arc::new(AIService::new(
+                    key.clone(),
+                    base_url,
+                    model,
+                    search_engine.clone(),
+                    history.clone(),
+                ))
+            });
 
             // Create search window
             let search_window = Rc::new(

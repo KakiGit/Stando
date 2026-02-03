@@ -1,11 +1,11 @@
+use crate::history::GLOBAL_HISTORY;
 use crate::history::{
     chat_timeline_by_hash, grouped_history_with_selection, normalize_chat_hash, ChatGroup,
     ChatGroupMetadata, ChatHistoryRecord, ChatSummary, ConversationRound, RECENT_CHAT_ID,
 };
 use chrono::Local;
-use std::ops::RangeInclusive;
-use crate::history::GLOBAL_HISTORY;
 use glib;
+use std::ops::RangeInclusive;
 
 pub const DEFAULT_EMPTY_MESSAGE: &str =
     "No chats yet. Each entry groups a full chat and shows every round when selected.";
@@ -299,9 +299,7 @@ impl HistoryPanelState {
                     // Spawn async task to delete records.
                     glib::MainContext::default().spawn_local(async move {
                         // Fire and forget; ignore the result.
-                        let _ = history
-                            .delete_chat_records_by_hash(&id)
-                            .await;
+                        let _ = history.delete_chat_records_by_hash(&id).await;
                     });
                 }
             }

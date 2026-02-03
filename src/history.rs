@@ -1,14 +1,14 @@
 use crate::logging;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use once_cell::sync::OnceCell;
-use std::sync::Arc;
 
 pub const RECENT_CHAT_ID: &str = "recent-chat";
 // Global reference to the shared UsageHistory instance.

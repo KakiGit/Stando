@@ -11,6 +11,7 @@ mod app;
 mod config;
 mod history;
 mod history_panel;
+mod key_press;
 mod logging;
 mod search;
 mod ui;
