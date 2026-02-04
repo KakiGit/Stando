@@ -99,6 +99,7 @@ impl SearchWindow {
         results_list_box.set_vexpand(false);
         results_list_box.set_valign(gtk4::Align::Start);
         results_list_box.set_size_request(-1, 1);
+        results_list_box.set_focusable(false);
         results_list_box
     }
 
@@ -163,8 +164,8 @@ impl SearchWindow {
         let history_list_box = ListBox::new();
         history_list_box.set_css_classes(&["history-results-list"]);
         history_list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        // Make the list box focusable so it can receive key events.
-        history_list_box.set_focusable(true);
+        // Keep list non-focusable so focus stays on the entry; key handling is on the entry.
+        history_list_box.set_focusable(false);
         history_list_box
     }
 
@@ -384,6 +385,15 @@ impl SearchWindow {
         &self.entry
     }
 
+    /// Returns true when the history panel is the visible content (e.g. AI mode).
+    /// Used so key handlers can delegate Up/Down and Ctrl+Del to history navigation when appropriate.
+    pub fn is_history_panel_visible(&self) -> bool {
+        self.content_stack
+            .visible_child_name()
+            .as_deref()
+            == Some("history-panel")
+    }
+
     #[allow(dead_code)]
     pub fn ai_button(&self) -> &Button {
         let _log_guard = logging::function_guard("SearchWindow::ai_button");
@@ -494,11 +504,6 @@ impl SearchWindow {
         dialog.present();
     }
 
-    pub fn focus_history_list(&self) {
-        let _log_guard = logging::function_guard("SearchWindow::focus_history_list");
-        self.history_list_box.grab_focus();
-    }
-
     pub async fn update_results(&self, new_results: Vec<SearchResult>) {
         let _log_guard = logging::function_guard("SearchWindow::update_results");
         *self.results.write().await = new_results.clone();
@@ -590,7 +595,7 @@ impl SearchWindow {
                 Propagation::Proceed
             }
         });
-        self.window.add_controller(controller);
+        self.entry.add_controller(controller);
     }
 
     pub fn get_query(&self) -> String {

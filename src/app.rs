@@ -445,12 +445,20 @@ impl App {
                         true
                     }
                     key if key == Key::Up || key == Key::KP_Up => {
-                        search_window_key.move_selection_up();
-                        true
+                        if search_window_key.is_history_panel_visible() {
+                            false
+                        } else {
+                            search_window_key.move_selection_up();
+                            true
+                        }
                     }
                     key if key == Key::Down || key == Key::KP_Down => {
-                        search_window_key.move_selection_down();
-                        true
+                        if search_window_key.is_history_panel_visible() {
+                            false
+                        } else {
+                            search_window_key.move_selection_down();
+                            true
+                        }
                     }
                     key if key == Key::Tab || key == Key::ISO_Left_Tab => {
                         search_window_key.autocomplete_selected()
@@ -593,9 +601,6 @@ impl App {
             state.ensure_latest_selected();
         }
         Self::refresh_history_panel_with_state(search_window.clone(), history_panel_state.clone());
-        if enabled {
-            search_window.focus_history_list();
-        }
         let _ = Self::reset_content(search_window, search_engine, config, ai_mode.clone()).await;
     }
 

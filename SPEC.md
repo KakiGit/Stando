@@ -43,6 +43,7 @@ A style blended with Neumorphism (soft shadow realism) or Skeuomorphic light eff
 * Dismiss on Escape: Pressing the Escape key closes the search window.
 * Resizable: The window can be resized by dragging its edges or corners.
 * Always on Top: The window remains above other windows when active.
+* Focus On Entry: The text entry field is focused automatically when the window opens.
 
 ## Modes
 

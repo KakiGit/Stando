@@ -45,6 +45,8 @@ pub fn history_navigation_controller(
     detail: TextView,
 ) -> EventControllerKey {
     let controller = EventControllerKey::new();
+    // Capture phase so we see keys (e.g. Ctrl+Del) before the Entry's default handler consumes them.
+    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
     controller.connect_key_pressed(move |_, keyval, _keycode, state| {
         if !is_history_panel_visible(&content_stack) {
             return Propagation::Proceed;
