@@ -17,6 +17,9 @@ mod search;
 mod ui;
 mod window;
 
+#[cfg(test)]
+mod test_support;
+
 use app::App;
 use history_panel::HistoryPanelState;
 

@@ -328,7 +328,9 @@ impl UsageHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ENV_LOCK;
     use chrono::TimeZone;
+    use std::fs;
 
     fn record(
         id: u128,
@@ -346,6 +348,36 @@ mod tests {
             source: None,
             chat_hash: Some(chat_hash.to_string()),
         }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: String) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.previous.take() {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("stando-test-{prefix}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
     }
 
     #[test]
@@ -386,5 +418,40 @@ mod tests {
         assert_eq!(grouped[0].rounds.len(), 2);
         assert_eq!(grouped[1].id, "beta");
         assert_eq!(grouped[1].rounds.len(), 1);
+    }
+
+    #[test]
+    fn usage_history_creates_expected_storage_files() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_temp_dir("history-files");
+        let home = root.join("home");
+        fs::create_dir_all(&home).expect("create home dir");
+        let _home_guard = EnvGuard::set("HOME", home.to_string_lossy().to_string());
+
+        let _history = UsageHistory::load();
+        let history_dir = home.join(".stando");
+        assert!(history_dir.join("search-history.json").exists());
+        assert!(history_dir.join("chat-history.json").exists());
+    }
+
+    #[test]
+    fn usage_history_persists_launch_counts() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_temp_dir("history-persist");
+        let home = root.join("home");
+        fs::create_dir_all(&home).expect("create home dir");
+        let _home_guard = EnvGuard::set("HOME", home.to_string_lossy().to_string());
+
+        let history = UsageHistory::load();
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        rt.block_on(async {
+            history.record_launch("app:calculator".to_string()).await;
+            history.record_launch("app:calculator".to_string()).await;
+        });
+
+        let history_file = home.join(".stando").join("search-history.json");
+        let content = fs::read_to_string(&history_file).expect("read history");
+        let map: HashMap<String, u64> = serde_json::from_str(&content).expect("parse history");
+        assert_eq!(map.get("app:calculator").copied(), Some(2));
     }
 }

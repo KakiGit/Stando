@@ -26,9 +26,6 @@ A style blended with Neumorphism (soft shadow realism) or Skeuomorphic light eff
 
 * `--ai-mode` or `-a`: Launch Stando with AI mode enabled by default.
 * `--help` or `-h`: Show help information.
-* `--version` or `-v`: Show version information.
-* `--config <path>`: Specify a custom configuration file path.
-* `--style <path>`: Specify a custom CSS style file path.
 * `--verbose` or `-V`: Enable verbose logging for debugging purposes.
 
 ## Configuration Options
