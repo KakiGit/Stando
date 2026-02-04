@@ -212,6 +212,7 @@ impl App {
         result
     }
 
+    #[allow(dead_code)]
     fn setup_entry_callbacks(&self) -> Result<()> {
         let log_guard = logging::function_guard("App::setup_entry_callbacks");
         let result = { Ok(()) };
@@ -248,7 +249,8 @@ impl App {
                 glib::MainContext::default().spawn_local(async move {
                     let is_ai_mode = *ai_mode.read().await;
                     if query.is_empty() {
-                        Self::reset_content(search_window, search_engine, config, ai_mode).await;
+                        let _ = Self::reset_content(search_window, search_engine, config, ai_mode)
+                            .await;
                         return;
                     }
 
@@ -262,8 +264,9 @@ impl App {
                             let results = search_engine.search(search_query, max_results).await;
                             search_window.update_results(results).await;
                         } else {
-                            Self::reset_content(search_window, search_engine, config, ai_mode)
-                                .await;
+                            let _ =
+                                Self::reset_content(search_window, search_engine, config, ai_mode)
+                                    .await;
                         }
                         return;
                     }
@@ -593,7 +596,7 @@ impl App {
         if enabled {
             search_window.focus_history_list();
         }
-        Self::reset_content(search_window, search_engine, config, ai_mode.clone()).await;
+        let _ = Self::reset_content(search_window, search_engine, config, ai_mode.clone()).await;
     }
 
     pub fn show_window(&self) {
@@ -691,6 +694,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     async fn append_history_entry(&self, entry: ChatHistoryRecord) {
         Self::record_history_entry(
             self.history_panel_state.clone(),

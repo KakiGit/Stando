@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use walkdir::WalkDir;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SearchResult {
     File {
@@ -62,6 +63,7 @@ impl SearchResult {
 
 pub struct SearchEngine {
     matcher: SkimMatcherV2,
+    #[allow(dead_code)]
     file_index: Arc<RwLock<Vec<SearchResult>>>,
     app_index: Arc<RwLock<Vec<SearchResult>>>,
     history: Arc<UsageHistory>,
@@ -78,6 +80,7 @@ impl SearchEngine {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn index_files(&self, search_paths: &[String]) -> Result<()> {
         let log_guard = logging::function_guard("SearchEngine::index_files");
         let result = async {

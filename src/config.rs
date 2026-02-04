@@ -5,22 +5,12 @@ use std::fs;
 use std::path::PathBuf;
 use xdg::BaseDirectories;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct FloatingPreference {
     pub enabled: bool,
     pub preferred_workspace: Option<String>,
     pub preferred_display: Option<String>,
-}
-
-impl Default for FloatingPreference {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            preferred_workspace: None,
-            preferred_display: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,16 +125,18 @@ impl Config {
         result
     }
 
+    #[allow(dead_code)]
     pub fn floating_preference(&self) -> &FloatingPreference {
         &self.floating_preference
     }
 
+    #[allow(dead_code)]
     pub fn set_floating_preference(&mut self, preference: FloatingPreference) -> Result<()> {
         let log_guard = logging::function_guard("Config::set_floating_preference");
-        let result = (|| {
+        let result = {
             self.floating_preference = preference;
             self.save()
-        })();
+        };
         if result.is_err() {
             log_guard.mark_error();
         }

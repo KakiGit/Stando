@@ -5,7 +5,7 @@ use crate::search::SearchResult;
 use adw::Application;
 use anyhow::{Context, Result};
 use gdk4::prelude::*;
-use gdk4::{Display, Key, ModifierType, Monitor, Rectangle};
+use gdk4::{Display, Key, Monitor, Rectangle};
 use gio::prelude::ListModelExt;
 use glib::{prelude::Cast, ControlFlow, Propagation};
 use gtk4::prelude::*;
@@ -41,6 +41,144 @@ pub struct SearchWindow {
 }
 
 impl SearchWindow {
+    fn create_main_box() -> Box {
+        let main_box = Box::new(gtk4::Orientation::Vertical, 0);
+        main_box.add_css_class("search-main");
+        main_box.set_hexpand(true);
+        main_box.set_vexpand(true);
+        main_box
+    }
+
+    fn create_search_box() -> Box {
+        let search_box = Box::new(gtk4::Orientation::Horizontal, 8);
+        search_box.add_css_class("search-bar");
+        search_box.set_margin_start(16);
+        search_box.set_margin_end(16);
+        search_box.set_margin_top(16);
+        search_box.set_margin_bottom(8);
+        search_box
+    }
+
+    fn create_entry() -> Entry {
+        let entry = Entry::new();
+        entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
+        entry.set_hexpand(true);
+        entry.set_margin_start(0);
+        entry.set_margin_end(0);
+        entry.set_css_classes(&["search-entry"]);
+        entry
+    }
+
+    fn create_ai_button(ai_shortcut: &str) -> Button {
+        let ai_button = Button::new();
+        ai_button.set_css_classes(&["ai-mode-button", "search-ai-button"]);
+        ai_button.set_tooltip_text(Some(&format!("Toggle AI Mode ({})", ai_shortcut)));
+        ai_button.set_label("AI");
+        ai_button.set_valign(gtk4::Align::Center);
+        ai_button
+    }
+
+    fn create_content_stack() -> Stack {
+        let content_stack = Stack::new();
+        content_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+        content_stack.set_transition_duration(200);
+        content_stack.add_css_class("search-results-stack");
+        content_stack.set_hhomogeneous(true);
+        // Allow the visible child to dictate height instead of the largest natural size.
+        content_stack.set_vhomogeneous(false);
+        content_stack.set_vexpand(true);
+        content_stack.set_hexpand(true);
+        content_stack
+    }
+
+    fn create_results_list_box() -> ListBox {
+        let results_list_box = ListBox::new();
+        results_list_box.set_css_classes(&["search-results-list"]);
+        results_list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        results_list_box.set_hexpand(true);
+        results_list_box.set_vexpand(false);
+        results_list_box.set_valign(gtk4::Align::Start);
+        results_list_box.set_size_request(-1, 1);
+        results_list_box
+    }
+
+    fn create_results_scrolled(
+        default_window_height: i32,
+        results_list_box: &ListBox,
+    ) -> ScrolledWindow {
+        let results_scrolled = ScrolledWindow::new();
+        results_scrolled.set_css_classes(&["search-results-scroll"]);
+        results_scrolled.set_hexpand(true);
+        results_scrolled.set_vexpand(true);
+        // Keep the window height stable by letting the scroller use available space
+        // instead of requesting the list's natural height.
+        results_scrolled.set_propagate_natural_height(false);
+        results_scrolled.set_propagate_natural_width(false);
+        results_scrolled.set_min_content_height(1);
+        results_scrolled.set_min_content_width(1);
+        results_scrolled.set_max_content_height(default_window_height);
+        results_scrolled.set_child(Some(results_list_box));
+        results_scrolled
+    }
+
+    fn create_history_paned(default_window_width: i32) -> Paned {
+        let history_paned = Paned::new(gtk4::Orientation::Horizontal);
+        history_paned.set_css_classes(&["history-pane"]);
+        let history_detail_position = ((default_window_width * 3) / 4).max(1);
+        history_paned.set_position(history_detail_position);
+        history_paned
+    }
+
+    fn create_history_detail() -> TextView {
+        let history_detail = TextView::new();
+        history_detail.set_editable(false);
+        history_detail.set_cursor_visible(false);
+        history_detail.set_wrap_mode(gtk4::WrapMode::WordChar);
+        history_detail.set_margin_start(12);
+        history_detail.set_margin_end(12);
+        history_detail.set_margin_top(12);
+        history_detail.set_margin_bottom(12);
+        history_detail.set_css_classes(&["history-detail"]);
+        history_detail
+    }
+
+    fn create_history_list_stack() -> Stack {
+        let history_list_stack = Stack::new();
+        history_list_stack.set_vexpand(true);
+        history_list_stack.set_hexpand(true);
+        history_list_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+        history_list_stack
+    }
+
+    fn create_history_list_scrolled() -> ScrolledWindow {
+        let history_list_scrolled = ScrolledWindow::new();
+        history_list_scrolled.set_hexpand(true);
+        history_list_scrolled.set_vexpand(true);
+        history_list_scrolled.set_css_classes(&["history-list-scroll"]);
+        history_list_scrolled
+    }
+
+    fn create_history_list_box() -> ListBox {
+        let history_list_box = ListBox::new();
+        history_list_box.set_css_classes(&["history-results-list"]);
+        history_list_box.set_selection_mode(gtk4::SelectionMode::Single);
+        // Make the list box focusable so it can receive key events.
+        history_list_box.set_focusable(true);
+        history_list_box
+    }
+
+    fn create_history_empty_label() -> Label {
+        let history_empty_label = Label::new(Some(DEFAULT_EMPTY_MESSAGE));
+        history_empty_label.set_wrap(true);
+        history_empty_label.set_wrap(true);
+        history_empty_label.set_margin_start(12);
+        history_empty_label.set_margin_end(12);
+        history_empty_label.set_margin_top(16);
+        history_empty_label.set_margin_bottom(16);
+        history_empty_label.set_css_classes(&["history-empty-label"]);
+        history_empty_label
+    }
+
     pub fn new(
         app: &Application,
         ai_shortcut: &str,
@@ -64,116 +202,42 @@ impl SearchWindow {
             Self::calculate_window_dimensions(Some(&window));
 
         // Main container
-        let main_box = Box::new(gtk4::Orientation::Vertical, 0);
-        main_box.add_css_class("search-main");
-        main_box.set_hexpand(true);
-        main_box.set_vexpand(true);
+        let main_box = Self::create_main_box();
         window.set_child(Some(&main_box));
 
         // Search bar container (horizontal box for entry + button)
-        let search_box = Box::new(gtk4::Orientation::Horizontal, 8);
-        search_box.add_css_class("search-bar");
-        search_box.set_margin_start(16);
-        search_box.set_margin_end(16);
-        search_box.set_margin_top(16);
-        search_box.set_margin_bottom(8);
+        let search_box = Self::create_search_box();
         main_box.append(&search_box);
 
         // Search entry
-        let entry = Entry::new();
-        entry.set_placeholder_text(Some(DEFAULT_PLACEHOLDER));
-        entry.set_hexpand(true);
-        entry.set_margin_start(0);
-        entry.set_margin_end(0);
-        entry.set_css_classes(&["search-entry"]);
+        let entry = Self::create_entry();
         search_box.append(&entry);
 
         // AI mode toggle button
-        let ai_button = Button::new();
-        ai_button.set_css_classes(&["ai-mode-button", "search-ai-button"]);
-        ai_button.set_tooltip_text(Some(&format!("Toggle AI Mode ({})", ai_shortcut)));
-        ai_button.set_label("AI");
-        ai_button.set_valign(gtk4::Align::Center);
+        let ai_button = Self::create_ai_button(ai_shortcut);
         search_box.append(&ai_button);
 
         // Content stack (switch between search results and history panel)
-        let content_stack = Stack::new();
-        content_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
-        content_stack.set_transition_duration(200);
-        content_stack.add_css_class("search-results-stack");
-        content_stack.set_hhomogeneous(true);
-        // Allow the visible child to dictate height instead of the largest natural size.
-        content_stack.set_vhomogeneous(false);
-        content_stack.set_vexpand(true);
-        content_stack.set_hexpand(true);
+        let content_stack = Self::create_content_stack();
         main_box.append(&content_stack);
 
         // Search results view
-        let results_scrolled = ScrolledWindow::new();
-        results_scrolled.set_css_classes(&["search-results-scroll"]);
-        results_scrolled.set_hexpand(true);
-        results_scrolled.set_vexpand(true);
-
-        let results_list_box = ListBox::new();
-        results_list_box.set_css_classes(&["search-results-list"]);
-        results_list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        results_list_box.set_hexpand(true);
-        results_list_box.set_vexpand(false);
-        results_list_box.set_valign(gtk4::Align::Start);
-        results_list_box.set_size_request(-1, 1);
-        // Keep the window height stable by letting the scroller use available space
-        // instead of requesting the list's natural height.
-        results_scrolled.set_propagate_natural_height(false);
-        results_scrolled.set_propagate_natural_width(false);
-        results_scrolled.set_min_content_height(1);
-        results_scrolled.set_min_content_width(1);
-        results_scrolled.set_max_content_height(default_window_height);
-        results_scrolled.set_child(Some(&results_list_box));
+        let results_list_box = Self::create_results_list_box();
+        let results_scrolled =
+            Self::create_results_scrolled(default_window_height, &results_list_box);
         content_stack.add_named(&results_scrolled, Some("search-results"));
 
         // History panel view
-        let history_paned = Paned::new(gtk4::Orientation::Horizontal);
-        history_paned.set_css_classes(&["history-pane"]);
-        let history_detail_position = ((default_window_width * 3) / 4).max(1);
-        history_paned.set_position(history_detail_position);
-
-        let history_detail = TextView::new();
-        history_detail.set_editable(false);
-        history_detail.set_cursor_visible(false);
-        history_detail.set_wrap_mode(gtk4::WrapMode::WordChar);
-        history_detail.set_margin_start(12);
-        history_detail.set_margin_end(12);
-        history_detail.set_margin_top(12);
-        history_detail.set_margin_bottom(12);
-        history_detail.set_css_classes(&["history-detail"]);
-
-        let history_list_stack = Stack::new();
-        history_list_stack.set_vexpand(true);
-        history_list_stack.set_hexpand(true);
-        history_list_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-
-        let history_list_scrolled = ScrolledWindow::new();
-        history_list_scrolled.set_hexpand(true);
-        history_list_scrolled.set_vexpand(true);
-        history_list_scrolled.set_css_classes(&["history-list-scroll"]);
-
-        let history_list_box = ListBox::new();
-        history_list_box.set_css_classes(&["history-results-list"]);
-        history_list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        // Make the list box focusable so it can receive key events.
-        history_list_box.set_focusable(true);
+        let history_paned = Self::create_history_paned(default_window_width);
+        let history_detail = Self::create_history_detail();
+        let history_list_stack = Self::create_history_list_stack();
+        let history_list_scrolled = Self::create_history_list_scrolled();
+        let history_list_box = Self::create_history_list_box();
         // Add a key controller to the history list box so that Ctrl+Del
         // deletes the selected chat when the list has focus.
         // History list box and its container are set up above.
         // The empty label is created below.
-        let history_empty_label = Label::new(Some(DEFAULT_EMPTY_MESSAGE));
-        history_empty_label.set_wrap(true);
-        history_empty_label.set_wrap(true);
-        history_empty_label.set_margin_start(12);
-        history_empty_label.set_margin_end(12);
-        history_empty_label.set_margin_top(16);
-        history_empty_label.set_margin_bottom(16);
-        history_empty_label.set_css_classes(&["history-empty-label"]);
+        let history_empty_label = Self::create_history_empty_label();
         history_list_stack.add_named(&history_empty_label, Some("history-empty"));
         // Place the history list inside the scrolled window and add to stack.
         history_list_scrolled.set_child(Some(&history_list_box));
@@ -227,6 +291,7 @@ impl SearchWindow {
         let history_empty_label_for_selection = history_empty_label.clone();
         let history_detail_for_selection = history_detail.clone();
         let history_entry_for_focus = entry.clone();
+
         history_list_box.connect_row_selected(move |_, row| {
             let entry_index = row.and_then(|row| {
                 let index = row.index();
@@ -444,7 +509,7 @@ impl SearchWindow {
 
         // Add new results
         for result in new_results.iter() {
-            let row = gtk4::ListBoxRow::new();
+            let row = ListBoxRow::new();
             row.set_css_classes(&["search-result-row"]);
             let display_text = match result {
                 crate::search::SearchResult::Text { content, name } => {
@@ -503,25 +568,25 @@ impl SearchWindow {
         });
     }
 
-    pub fn connect_key_press<F: Fn(gdk4::Key) -> bool + 'static>(&self, callback: F) {
+    pub fn connect_key_press<F: Fn(Key) -> bool + 'static>(&self, callback: F) {
         let _log_guard = logging::function_guard("SearchWindow::connect_key_press");
         let controller = gtk4::EventControllerKey::new();
         controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
             let handled = match keyval {
-                gdk4::Key::Escape
-                | gdk4::Key::Up
-                | gdk4::Key::Down
-                | gdk4::Key::KP_Up
-                | gdk4::Key::KP_Down
-                | gdk4::Key::Tab
-                | gdk4::Key::ISO_Left_Tab => callback(keyval),
+                Key::Escape
+                | Key::Up
+                | Key::Down
+                | Key::KP_Up
+                | Key::KP_Down
+                | Key::Tab
+                | Key::ISO_Left_Tab => callback(keyval),
                 _ => false,
             };
 
             if handled {
-                glib::Propagation::Stop
+                Propagation::Stop
             } else {
-                glib::Propagation::Proceed
+                Propagation::Proceed
             }
         });
         self.window.add_controller(controller);
@@ -648,7 +713,7 @@ impl SearchWindow {
             let mut last = last_for_signal.borrow_mut();
             if *last != (width, height) {
                 *last = (width, height);
-                tracing::info!(widget = name, width, height, "Widget size allocation");
+                tracing::debug!(widget = name, width, height, "Widget size allocation");
             }
             ControlFlow::Continue
         });

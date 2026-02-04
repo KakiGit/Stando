@@ -2,6 +2,7 @@ use crate::config::FloatingPreference;
 use adw::Application;
 
 /// Tracks the runtime stacking data used during floating-mode operations.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct StandoWindowState {
     pub is_floating: bool,
@@ -22,12 +23,14 @@ impl Default for StandoWindowState {
 }
 
 /// Coordinates GTK stacking hints and floating-mode state transitions.
+#[allow(dead_code)]
 pub struct FloatingWindowController {
     application: Application,
     state: StandoWindowState,
     preference: FloatingPreference,
 }
 
+#[allow(dead_code)]
 impl FloatingWindowController {
     /// Creates a new controller tied to the provided GTK application.
     pub fn new(application: &Application, preference: FloatingPreference) -> Self {

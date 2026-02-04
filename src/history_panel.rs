@@ -4,7 +4,6 @@ use crate::history::{
     ChatGroupMetadata, ChatHistoryRecord, ChatSummary, ConversationRound, RECENT_CHAT_ID,
 };
 use chrono::Local;
-use glib;
 use std::ops::RangeInclusive;
 
 pub const DEFAULT_EMPTY_MESSAGE: &str =
@@ -33,6 +32,7 @@ impl Default for HistoryPanelState {
     }
 }
 
+#[allow(dead_code)]
 impl HistoryPanelState {
     pub fn new_with_message(message: impl Into<String>) -> Self {
         Self {
@@ -107,7 +107,7 @@ impl HistoryPanelState {
                         "[no content]".to_string()
                     } else {
                         let first_line = trimmed.lines().next().unwrap_or("").trim();
-                        let mut preview = first_line.chars().take(80).collect::<String>();
+                        let preview = first_line.chars().take(80).collect::<String>();
                         if preview.is_empty() {
                             "[no preview]".to_string()
                         } else {
@@ -172,7 +172,7 @@ impl HistoryPanelState {
     }
 
     pub fn new_chat_row_index(&self) -> Option<usize> {
-        self.has_new_chat_row().then(|| self.chats.len())
+        self.has_new_chat_row().then_some(self.chats.len())
     }
 
     pub fn is_new_chat_row_index(&self, index: usize) -> bool {

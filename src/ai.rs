@@ -127,7 +127,7 @@ impl AIService {
             let base = self.base_url.trim_end_matches('/');
             let response = self
                 .client
-                .post(&format!("{}/v1/chat/completions", base))
+                .post(format!("{}/v1/chat/completions", base))
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&request)

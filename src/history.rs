@@ -50,6 +50,7 @@ impl ChatHistoryRecord {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ConversationRound {
     pub round_id: Uuid,
@@ -85,6 +86,7 @@ pub struct ChatGroup {
     pub rounds: Vec<ConversationRound>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ChatSummary {
     pub chat_hash: String,
