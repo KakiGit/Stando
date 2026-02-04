@@ -408,7 +408,7 @@ impl App {
                         // Normal mode: open selected result
                         if let Some(result) = search_window_clone.get_selected_result().await {
                             Self::open_result(&result);
-                            Self::record_result_usage(history.clone(), &result);
+                            Self::record_result_usage(&history, &result).await;
                             search_window_clone.hide();
                             application.quit();
                         }
@@ -427,7 +427,7 @@ impl App {
                 glib::MainContext::default().spawn_local(async move {
                     if let Some(result) = search_window_clone.get_selected_result().await {
                         Self::open_result(&result);
-                        Self::record_result_usage(history.clone(), &result);
+                        Self::record_result_usage(&history, &result).await;
                         search_window_clone.hide();
                         application.quit();
                     }
@@ -686,11 +686,14 @@ impl App {
         }
     }
 
-    fn record_result_usage(history: Arc<UsageHistory>, result: &crate::search::SearchResult) {
+    async fn record_result_usage(
+        history: &Arc<UsageHistory>,
+        result: &crate::search::SearchResult,
+    ) {
+        let _log_guard = logging::function_guard("App::record_result_usage");
         if let Some(id) = result.history_id() {
-            glib::MainContext::default().spawn_local(async move {
-                history.record_launch(id).await;
-            });
+            tracing::debug!(history_id = %id, "Recording result usage");
+            history.record_launch(id).await;
         }
     }
 

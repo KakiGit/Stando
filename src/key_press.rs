@@ -126,6 +126,7 @@ fn build_history_row(summary: &ChatSummary) -> ListBoxRow {
     let row = ListBoxRow::new();
     row.set_css_classes(&["history-entry-row"]);
     let container = GtkBox::new(gtk4::Orientation::Vertical, 4);
+    container.set_css_classes(&["history-entry-container"]);
     container.set_margin_top(4);
     container.set_margin_bottom(4);
     container.set_margin_start(6);
@@ -157,6 +158,7 @@ fn build_new_chat_row() -> ListBoxRow {
     let row = ListBoxRow::new();
     row.set_css_classes(&["history-entry-row", "history-entry-new"]);
     let container = GtkBox::new(gtk4::Orientation::Vertical, 4);
+    container.set_css_classes(&["history-entry-container"]);
     container.set_margin_top(4);
     container.set_margin_bottom(4);
     container.set_margin_start(6);

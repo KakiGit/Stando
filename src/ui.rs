@@ -144,6 +144,7 @@ impl SearchWindow {
 
     fn create_history_list_stack() -> Stack {
         let history_list_stack = Stack::new();
+        history_list_stack.add_css_class("history-list-stack");
         history_list_stack.set_vexpand(true);
         history_list_stack.set_hexpand(true);
         history_list_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
