@@ -1,6 +1,6 @@
 # Stando
 
-A next-gen selection based search system for Linux. Stando is a keyboard-oriented tool that provides fast file and application search with optional AI integration.
+A next-gen selection based search system for Linux. Stando is a keyboard-oriented tool that serves as an application launcher and AI assitant.
 
 ## Features
 
