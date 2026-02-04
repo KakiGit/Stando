@@ -2,26 +2,11 @@ use adw::Application;
 use anyhow::{Context, Result};
 use clap::Parser;
 use gtk4::prelude::*;
+use stando::logging;
+use stando::{app::App, history_panel::HistoryPanelState};
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-mod ai;
-mod app;
-mod config;
-mod history;
-mod history_panel;
-mod key_press;
-mod logging;
-mod search;
-mod ui;
-mod window;
-
-#[cfg(test)]
-mod test_support;
-
-use app::App;
-use history_panel::HistoryPanelState;
 
 #[derive(Parser, Debug)]
 #[command(name = "stando")]

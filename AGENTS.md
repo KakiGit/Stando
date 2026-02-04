@@ -4,7 +4,7 @@
 
 **MUST** run the listed [Commands](#commands) before finalizing the changes.
 **MUST** follow the [Code Style](#code-Style) conventions.
-**MUST** update [Documentations](#documentations) as needed.
+**MUST** update [Documentations](#documentations) if needed.
 
 ## Code Style
 
